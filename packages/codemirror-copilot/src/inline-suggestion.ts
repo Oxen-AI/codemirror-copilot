@@ -23,12 +23,23 @@ import { debouncePromise } from "./lib/utils";
  * The inner method to fetch suggestions: this is
  * abstracted by `inlineCopilot`.
  */
-type InlineFetchFn = (state: EditorState) => Promise<string>;
+type InlineFetchFn = (state: EditorState) => Promise<DiffSuggestion>;
+
+/**
+ * Represents a diff suggestion with old and new text
+ */
+interface DiffSuggestion {
+  oldText: string;
+  newText: string;
+  from: number;
+  to: number;
+  replaceEntireDocument?: boolean; // New flag to indicate full document replacement
+}
 
 /**
  * Current state of the autosuggestion
  */
-const InlineSuggestionState = StateField.define<{ suggestion: null | string }>({
+const InlineSuggestionState = StateField.define<{ suggestion: null | DiffSuggestion }>({
   create() {
     return { suggestion: null };
   },
@@ -40,7 +51,7 @@ const InlineSuggestionState = StateField.define<{ suggestion: null | string }>({
       if (inlineSuggestion && tr.state.doc == inlineSuggestion.value.doc) {
         // There is a new selection that has been set via an effect,
         // and it applies to the current document.
-        return { suggestion: inlineSuggestion.value.text };
+        return { suggestion: inlineSuggestion.value.suggestion };
       } else if (!tr.docChanged && !tr.selection) {
         // This transaction is irrelevant to the document state
         // and could be generate by another plugin, so keep
@@ -53,9 +64,51 @@ const InlineSuggestionState = StateField.define<{ suggestion: null | string }>({
 });
 
 const InlineSuggestionEffect = StateEffect.define<{
-  text: string | null;
+  suggestion: DiffSuggestion | null;
   doc: Text;
 }>();
+
+/**
+ * Simple diff calculation to highlight changes
+ */
+function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  
+  const added: string[] = [];
+  const removed: string[] = [];
+  
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+    
+    if (oldLine !== newLine) {
+      if (oldLine) {
+        // Show removed line with red color
+        removed.push(`- ${oldLine}`);
+      }
+      if (newLine) {
+        // Show added line with green color
+        added.push(`+ ${newLine}`);
+      }
+    }
+  }
+  
+  // If no changes, show a simple replacement message
+  if (added.length === 0 && removed.length === 0) {
+    return {
+      added: `→ ${newText.trim()}`,
+      removed: ''
+    };
+  }
+  
+  return {
+    added: added.join('\n'),
+    removed: removed.join('\n')
+  };
+}
 
 /**
  * Rendered by `renderInlineSuggestionPlugin`,
@@ -63,25 +116,31 @@ const InlineSuggestionEffect = StateEffect.define<{
  * text to show what would be inserted if you accept
  * the AI suggestion.
  */
-function inlineSuggestionDecoration(view: EditorView, suggestionText: string) {
-  const pos = view.state.selection.main.head;
+function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   const widgets = [];
+  
+  // Create decoration for the diff display
   const w = Decoration.widget({
-    widget: new InlineSuggestionWidget(suggestionText),
+    widget: new InlineSuggestionWidget(suggestion),
     side: 1,
   });
-  widgets.push(w.range(pos));
+  
+  // If replacing entire document, show at the beginning
+  const position = suggestion.replaceEntireDocument ? 0 : suggestion.from;
+  widgets.push(w.range(position));
+  
   return Decoration.set(widgets);
 }
 
 export const suggestionConfigFacet = Facet.define<
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn },
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn | undefined }
+  { acceptOnClick: boolean; fetchFn: InlineFetchFn; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void },
+  { acceptOnClick: boolean; fetchFn: InlineFetchFn | undefined; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void }
 >({
   combine(value) {
     return {
       acceptOnClick: !!value.at(-1)?.acceptOnClick,
       fetchFn: value.at(-1)?.fetchFn,
+      onEdit: value.at(-1)?.onEdit,
     };
   },
 });
@@ -91,23 +150,67 @@ export const suggestionConfigFacet = Facet.define<
  * with the rest of the code in the editor.
  */
 class InlineSuggestionWidget extends WidgetType {
-  suggestion: string;
+  suggestion: DiffSuggestion;
 
   /**
    * Create a new suggestion widget.
    */
-  constructor(suggestion: string) {
+  constructor(suggestion: DiffSuggestion) {
     super();
     this.suggestion = suggestion;
   }
+  
   toDOM(view: EditorView) {
-    const span = document.createElement("span");
-    span.style.opacity = "0.4";
-    span.className = "cm-inline-suggestion";
-    span.textContent = this.suggestion;
-    span.onclick = (e) => this.accept(e, view);
-    return span;
+    const container = document.createElement("div");
+    container.className = "cm-inline-suggestion";
+    container.style.cssText = `
+      opacity: 0.8;
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 4px 0;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+      font-size: 0.9em;
+      border-left: 4px solid #007acc;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      max-width: 100%;
+      overflow-x: auto;
+    `;
+    
+    const diff = calculateDiff(this.suggestion.oldText, this.suggestion.newText);
+    
+    // Add a header to indicate this is a suggestion
+    const header = document.createElement("div");
+    header.style.cssText = "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
+    header.textContent = this.suggestion.replaceEntireDocument 
+      ? "💡 AI Document Rewrite" 
+      : "💡 AI Suggestion";
+    container.appendChild(header);
+    
+    if (diff.removed) {
+      const removedSpan = document.createElement("div");
+      removedSpan.style.cssText = "color: #d73a49; margin-bottom: 4px; font-family: monospace; white-space: pre;";
+      removedSpan.textContent = diff.removed;
+      container.appendChild(removedSpan);
+    }
+    
+    if (diff.added) {
+      const addedSpan = document.createElement("div");
+      addedSpan.style.cssText = "color: #28a745; font-family: monospace; white-space: pre;";
+      addedSpan.textContent = diff.added;
+      container.appendChild(addedSpan);
+    }
+    
+    // Add a hint about how to accept
+    const hint = document.createElement("div");
+    hint.style.cssText = "font-size: 0.75em; color: #666; margin-top: 4px; font-style: italic;";
+    hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
+    container.appendChild(hint);
+    
+    container.onclick = (e) => this.accept(e, view);
+    return container;
   }
+  
   accept(e: MouseEvent, view: EditorView) {
     const config = view.state.facet(suggestionConfigFacet);
     if (!config.acceptOnClick) return;
@@ -115,19 +218,20 @@ class InlineSuggestionWidget extends WidgetType {
     e.stopPropagation();
     e.preventDefault();
 
-    const suggestionText = view.state.field(InlineSuggestionState)?.suggestion;
+    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
 
     // If there is no suggestion, do nothing and let the default keymap handle it
-    if (!suggestionText) {
+    if (!suggestion) {
       return false;
     }
 
     view.dispatch({
-      ...insertCompletionText(
+      ...insertDiffText(
         view.state,
-        suggestionText,
-        view.state.selection.main.head,
-        view.state.selection.main.head,
+        suggestion.newText,
+        suggestion.from,
+        suggestion.to,
+        suggestion.replaceEntireDocument,
       ),
     });
     return true;
@@ -138,7 +242,7 @@ class InlineSuggestionWidget extends WidgetType {
  * Listens to document updates and calls `fetchFn`
  * to fetch auto-suggestions. This relies on
  * `InlineSuggestionState` also being installed
- * in the editor’s extensions.
+ * in the editor's extensions.
  */
 export const fetchSuggestion = ViewPlugin.fromClass(
   class Plugin {
@@ -155,26 +259,35 @@ export const fetchSuggestion = ViewPlugin.fromClass(
       if (isAutocompleted) {
         return;
       }
-      //   for (const tr of update.transactions) {
-      //     // Check the userEvent property of the transaction
-      //     if (tr.isUserEvent("input.complete")) {
-      //         console.log("Change was due to autocomplete");
-      //     } else {
-      //         console.log("Change was due to user input");
-      //     }
-      // }
 
-      // console.log("CH", update);
+      // Call onEdit callback if provided
       const config = update.view.state.facet(suggestionConfigFacet);
+      if (config.onEdit) {
+        for (const tr of update.transactions) {
+          if (tr.docChanged) {
+            const oldDoc = update.startState.doc.toString();
+            const newDoc = update.state.doc.toString();
+            
+            // Find the changes in the transaction
+            tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
+              config.onEdit!(oldDoc, newDoc, fromA, toA, insert.toString());
+            });
+          }
+        }
+      }
+
       if (!config.fetchFn) {
         console.error(
           "Unexpected issue in codemirror-copilot: fetchFn was not configured",
         );
         return;
       }
+      
       const result = await config.fetchFn(update.state);
+      
+      // The result is now a DiffSuggestion object
       update.view.dispatch({
-        effects: InlineSuggestionEffect.of({ text: result, doc: doc }),
+        effects: InlineSuggestionEffect.of({ suggestion: result, doc: doc }),
       });
     }
   },
@@ -188,28 +301,14 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
       this.decorations = Decoration.none;
     }
     update(update: ViewUpdate) {
-      const suggestionText = update.state.field(InlineSuggestionState)
-        ?.suggestion;
-      if (!suggestionText) {
+      const suggestion = update.state.field(InlineSuggestionState)?.suggestion;
+      if (!suggestion) {
         this.decorations = Decoration.none;
         return;
       }
-      //   console.log("SUGGESTION", suggestionText, update.transactions.map(t => t.effects.map(e=>e.is(InlineSuggestionEffect))));
-      //   for (const tr of update.transactions) {
-      //     // Check the userEvent property of the transaction
-      //     if (wasAuto){
-      //       wasAuto = false;
-      //       debugger;
-      //     }
-      //     if (tr.isUserEvent("input.complete")) {
-      //         console.log("Change was due to autocomplete");
-      //     } else {
-      //         console.log("Change was due to user input");
-      //     }
-      // }
+      
       this.decorations = inlineSuggestionDecoration(
-        update.view,
-        suggestionText,
+        suggestion,
       );
     }
   },
@@ -227,21 +326,38 @@ const inlineSuggestionKeymap = Prec.highest(
     {
       key: "Tab",
       run: (view) => {
-        const suggestionText = view.state.field(InlineSuggestionState)
-          ?.suggestion;
+        const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
 
         // If there is no suggestion, do nothing and let the default keymap handle it
-        if (!suggestionText) {
+        if (!suggestion) {
           return false;
         }
 
         view.dispatch({
-          ...insertCompletionText(
+          ...insertDiffText(
             view.state,
-            suggestionText,
-            view.state.selection.main.head,
-            view.state.selection.main.head,
+            suggestion.newText,
+            suggestion.from,
+            suggestion.to,
+            suggestion.replaceEntireDocument,
           ),
+        });
+        return true;
+      },
+    },
+    {
+      key: "Escape",
+      run: (view) => {
+        const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
+
+        // If there is no suggestion, do nothing
+        if (!suggestion) {
+          return false;
+        }
+
+        // Clear the suggestion
+        view.dispatch({
+          effects: InlineSuggestionEffect.of({ suggestion: null, doc: view.state.doc }),
         });
         return true;
       },
@@ -249,12 +365,24 @@ const inlineSuggestionKeymap = Prec.highest(
   ]),
 );
 
-function insertCompletionText(
+function insertDiffText(
   state: EditorState,
   text: string,
   from: number,
   to: number,
+  replaceEntireDocument: boolean = false,
 ): TransactionSpec {
+  if (replaceEntireDocument) {
+    // Replace the entire document, ensuring no extra newlines
+    const cleanText = text.trim();
+    return {
+      changes: { from: 0, to: state.doc.length, insert: cleanText },
+      selection: EditorSelection.cursor(cleanText.length),
+      userEvent: "input.complete",
+    };
+  }
+  
+  // Original behavior for partial replacement
   return {
     ...state.changeByRange((range) => {
       if (range == state.selection.main)
@@ -295,6 +423,17 @@ type InlineSuggestionOptions = {
    * automatically accept it.
    */
   acceptOnClick?: boolean;
+
+  /**
+   * Callback called when an edit occurs, for tracking patches
+   */
+  onEdit?: (
+    oldDoc: string,
+    newDoc: string,
+    from: number,
+    to: number,
+    insert: string
+  ) => void;
 };
 
 /**
@@ -302,10 +441,10 @@ type InlineSuggestionOptions = {
  * auto suggestions.
  */
 export function inlineSuggestion(options: InlineSuggestionOptions) {
-  const { delay = 500, acceptOnClick = true } = options;
+  const { delay = 500, acceptOnClick = true, onEdit } = options;
   const fetchFn = debouncePromise(options.fetchFn, delay);
   return [
-    suggestionConfigFacet.of({ acceptOnClick, fetchFn }),
+    suggestionConfigFacet.of({ acceptOnClick, fetchFn, onEdit }),
     InlineSuggestionState,
     fetchSuggestion,
     renderInlineSuggestionPlugin,
