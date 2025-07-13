@@ -2,7 +2,7 @@ import dynamic from "next/dynamic";
 import { python } from "@codemirror/lang-python";
 import { dracula } from "@uiw/codemirror-theme-dracula";
 
-import { inlineCopilot, clearLocalCache, getLastEditPatch } from "../dist";
+import { inlineCopilot, clearLocalCache, calculateDiff } from "../dist";
 import {
   Select,
   SelectContent,
@@ -27,14 +27,13 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
 //   return`;
 
 const DEFAULTCODE = `import pandas as pd
-file_path = "data.csv"
+file_path = "data.parq"
 df = pd.read`;
 
 function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState("");
-  const [lastPatch, setLastPatch] = useState(null);
   
   return (
     <>
@@ -85,12 +84,7 @@ function CodeEditor() {
         extensions={[
           python(),
           inlineCopilot(
-            async (prefix, suffix, patch) => {
-              // Update the last patch for display
-              if (patch) {
-                setLastPatch(patch);
-              }
-
+            async (prefix, suffix) => {
               const res = await fetch("/api/autocomplete", {
                 method: "POST",
                 headers: {
@@ -101,8 +95,7 @@ function CodeEditor() {
                   suffix,
                   language: "python",
                   model,
-                  lastEdit: lastPrediction,
-                  lastPatch: patch,
+                  lastPrediction: lastPrediction,
                 }),
               });
 
@@ -129,24 +122,12 @@ function CodeEditor() {
         </label>
       </div>
       
-      {lastPatch && (
+      {lastPrediction && (
         <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Edit Patch:</h3>
-          <div className="text-xs font-mono">
-            <div className="text-gray-400">Line {lastPatch.line}:</div>
-            <div className="text-red-400">- {JSON.stringify(lastPatch.original)}</div>
-            <div className="text-green-400">+ {JSON.stringify(lastPatch.modified)}</div>
-            {lastPatch.contextBefore && lastPatch.contextBefore.length > 0 && (
-              <div className="text-gray-500 mt-1">
-                Context before: {lastPatch.contextBefore.map(line => JSON.stringify(line)).join('\n')}
-              </div>
-            )}
-            {lastPatch.contextAfter && lastPatch.contextAfter.length > 0 && (
-              <div className="text-gray-500">
-                Context after: {lastPatch.contextAfter.map(line => JSON.stringify(line)).join('\n')}
-              </div>
-            )}
-          </div>
+          <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prediction:</h3>
+          <pre className="text-xs font-mono">
+            {lastPrediction}
+          </pre>
         </div>
       )}
     </>

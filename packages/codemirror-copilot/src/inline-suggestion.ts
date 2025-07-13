@@ -28,7 +28,7 @@ type InlineFetchFn = (state: EditorState) => Promise<DiffSuggestion>;
 /**
  * Represents a diff suggestion with old and new text
  */
-interface DiffSuggestion {
+export interface DiffSuggestion {
   oldText: string;
   newText: string;
   from: number;
@@ -110,12 +110,219 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
 }
 
 /**
- * Rendered by `renderInlineSuggestionPlugin`,
- * this creates possibly multiple lines of ghostly
- * text to show what would be inserted if you accept
- * the AI suggestion.
+ * Calculate the specific ranges where changes occur between old and new text
  */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
+function calculateChangeRanges(oldText: string, newText: string): Array<{ from: number; to: number; text: string }> {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const ranges: Array<{ from: number; to: number; text: string }> = [];
+  
+  let currentPos = 0;
+  
+  // Process existing lines (up to the length of old text)
+  for (let i = 0; i < oldLines.length; i++) {
+    const oldLine = oldLines[i];
+    const newLine = newLines[i] || '';
+    
+    if (oldLine !== newLine) {
+      // Calculate the position where this line starts
+      const lineStart = currentPos;
+      const lineEnd = lineStart + oldLine.length;
+      
+      if (newLine) {
+        // Add ghost text for the new line
+        ranges.push({
+          from: lineStart,
+          to: lineEnd,
+          text: newLine
+        });
+      }
+    }
+    
+    // Move to next line position (account for the newline character)
+    currentPos += oldLine.length;
+    if (i < oldLines.length - 1) {
+      currentPos += 1; // +1 for newline character
+    }
+  }
+  
+  // Handle additional lines in new text beyond the old text
+  if (newLines.length > oldLines.length) {
+    // Calculate the position at the end of the old text
+    const endOfOldText = currentPos;
+    
+    // Get all the additional lines from new text
+    const additionalLines = newLines.slice(oldLines.length);
+    const additionalText = additionalLines.join('\n');
+    
+    if (additionalText) {
+      // Add one large completion block for all additional content
+      ranges.push({
+        from: endOfOldText,
+        to: endOfOldText,
+        text: additionalText
+      });
+    }
+  }
+  
+  return ranges;
+}
+
+/**
+ * Widget for displaying ghost text inline
+ */
+class GhostTextWidget extends WidgetType {
+  text: string;
+  suggestion: DiffSuggestion;
+  
+  constructor(text: string, suggestion: DiffSuggestion) {
+    super();
+    this.text = text;
+    this.suggestion = suggestion;
+  }
+  
+  toDOM(view: EditorView) {
+    const span = document.createElement("span");
+    span.className = "cm-ghost-text";
+    span.style.cssText = `
+      color: #007acc;
+      opacity: 0.6;
+      font-style: italic;
+      background: rgba(0, 122, 204, 0.1);
+      border-radius: 2px;
+      padding: 1px 2px;
+      cursor: pointer;
+    `;
+    span.textContent = this.text;
+    span.onclick = (e) => this.accept(e, view);
+    return span;
+  }
+  
+  accept(e: MouseEvent, view: EditorView) {
+    const config = view.state.facet(suggestionConfigFacet);
+    if (!config.acceptOnClick) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
+
+    // If there is no suggestion, do nothing and let the default keymap handle it
+    if (!suggestion) {
+      return false;
+    }
+
+    view.dispatch({
+      ...insertDiffText(
+        view.state,
+        suggestion.newText,
+        suggestion.from,
+        suggestion.to,
+      ),
+    });
+    return true;
+  }
+}
+
+/**
+ * Small widget to indicate that a suggestion can be accepted
+ */
+class AcceptIndicatorWidget extends WidgetType {
+  suggestion: DiffSuggestion;
+  
+  constructor(suggestion: DiffSuggestion) {
+    super();
+    this.suggestion = suggestion;
+  }
+  
+  toDOM(view: EditorView) {
+    const container = document.createElement("div");
+    container.style.cssText = `
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    `;
+    
+    // Accept button
+    const acceptSpan = document.createElement("span");
+    acceptSpan.className = "cm-accept-indicator";
+    acceptSpan.style.cssText = `
+      color: #007acc;
+      opacity: 0.8;
+      font-size: 0.8em;
+      cursor: pointer;
+      padding: 1px 4px;
+      background: rgba(0, 122, 204, 0.1);
+      border-radius: 3px;
+      border: 1px solid rgba(0, 122, 204, 0.3);
+    `;
+    acceptSpan.textContent = "💡 Accept [Tab]";
+    acceptSpan.onclick = (e) => this.accept(e, view);
+    container.appendChild(acceptSpan);
+    
+    // Reject button
+    const rejectSpan = document.createElement("span");
+    rejectSpan.className = "cm-reject-indicator";
+    rejectSpan.style.cssText = `
+      color: #d73a49;
+      opacity: 0.8;
+      font-size: 0.8em;
+      cursor: pointer;
+      padding: 1px 4px;
+      background: rgba(215, 58, 73, 0.1);
+      border-radius: 3px;
+      border: 1px solid rgba(215, 58, 73, 0.3);
+    `;
+    rejectSpan.textContent = "❌ Reject [Esc]";
+    rejectSpan.onclick = (e) => this.reject(e, view);
+    container.appendChild(rejectSpan);
+    
+    return container;
+  }
+  
+  accept(e: MouseEvent, view: EditorView) {
+    const config = view.state.facet(suggestionConfigFacet);
+    if (!config.acceptOnClick) return;
+
+    e.stopPropagation();
+    e.preventDefault();
+
+    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
+
+    // If there is no suggestion, do nothing and let the default keymap handle it
+    if (!suggestion) {
+      return false;
+    }
+
+    view.dispatch({
+      ...insertDiffText(
+        view.state,
+        suggestion.newText,
+        suggestion.from,
+        suggestion.to,
+      ),
+    });
+    return true;
+  }
+  
+  reject(e: MouseEvent, view: EditorView) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    // Clear the suggestion
+    view.dispatch({
+      effects: InlineSuggestionEffect.of({ suggestion: null, doc: view.state.doc }),
+    });
+    return true;
+  }
+}
+
+/**
+ * Rendered by `renderInlineSuggestionPlugin`,
+ * this creates multiple decoration widgets for the ranges
+ * where changes occur in the document.
+ */
+function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView) {
   console.log("=====suggestion oldText======")
   console.log(suggestion.oldText)
   console.log("=====end suggestion oldText======")
@@ -123,37 +330,60 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   console.log(suggestion.newText)
   console.log("=====end suggestion newText======\n\n")
 
-  const diff = calculateDiff(suggestion.oldText, suggestion.newText);
+  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText);
+  
+  console.log("=====change ranges======")
+  for (const range of changeRanges) {
+    console.log(range)
+  }
+  console.log("=====end change ranges======")
 
-  console.log("=====diff added======")
-  console.log(diff.added)
-  console.log("=====end diff added======")
-  console.log("=====diff removed======")
-  console.log(diff.removed)
-  console.log("=====end diff removed======")
+  const decorations = [];
+  const docLength = view.state.doc.length;
 
-  // Create decoration for the diff display
-  const w = Decoration.widget({
-    widget: new InlineSuggestionWidget(suggestion),
-    side: 1,
+  // Create all decorations and sort them by position
+  for (const range of changeRanges) {
+    // Validate that the range is within document bounds
+    const from = Math.max(0, Math.min(range.from, docLength));
+    const to = Math.max(from, Math.min(range.to, docLength));
+    
+    if (from < to) {
+      // Add ghost text decoration
+      const ghostWidget = Decoration.replace({
+        widget: new GhostTextWidget(range.text, suggestion),
+        inclusiveStart: false,
+        inclusiveEnd: false
+      });
+      decorations.push(ghostWidget.range(from, to));
+      
+      // Add accept/reject button at the end of the line
+      try {
+        const lineEnd = view.state.doc.lineAt(to).to;
+        const buttonPosition = Math.min(lineEnd, docLength);
+        const acceptWidget = Decoration.widget({
+          widget: new AcceptIndicatorWidget(suggestion),
+          side: 1
+        });
+        decorations.push(acceptWidget.range(buttonPosition));
+      } catch (error) {
+        // If we can't get the line end, place the button after the range
+        const acceptWidget = Decoration.widget({
+          widget: new AcceptIndicatorWidget(suggestion),
+          side: 1
+        });
+        decorations.push(acceptWidget.range(to));
+      }
+    }
+  }
+
+  // Sort decorations by their from position to ensure they're in order
+  decorations.sort((a, b) => {
+    const aFrom = a.from;
+    const bFrom = b.from;
+    return aFrom - bFrom;
   });
   
-  // If replacing entire document, show at the beginning
-  const position = 0;
-  const widgets = [];
-  widgets.push(w.range(position));
-  
-  return Decoration.set(widgets);
-
-  // REPLACE IN THE MIDDLE OF THE DOCUMENT
-  // const pos = suggestion.from;
-  // const widgets = [];
-  // const w = Decoration.widget({
-  //   widget: new InlineSuggestionWidget(suggestion),
-  //   side: 1,
-  // });
-  // widgets.push(w.range(pos));
-  // return Decoration.set(widgets);
+  return Decoration.set(decorations);
 }
 
 export const suggestionConfigFacet = Facet.define<
@@ -330,6 +560,7 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
       
       this.decorations = inlineSuggestionDecoration(
         suggestion,
+        update.view,
       );
     }
   },

@@ -1,4 +1,4 @@
-import { inlineSuggestion } from "./inline-suggestion";
+import { inlineSuggestion, type DiffSuggestion } from "./inline-suggestion";
 import type { EditorState } from "@codemirror/state";
 import { Text } from "@codemirror/state";
 
@@ -26,16 +26,10 @@ export interface Patch {
    * Optional context lines after the change
    */
   contextAfter?: string[];
-}
-
-/**
- * Represents a diff suggestion with old and new text
- */
-export interface DiffSuggestion {
-  oldText: string;
-  newText: string;
-  from: number;
-  to: number;
+  /**
+   * The diff string
+   */
+  diffString?: string;
 }
 
 /**
@@ -51,11 +45,6 @@ export type SuggestionRequestCallback = (
 ) => Promise<string>;
 
 const localSuggestionsCache: { [key: string]: DiffSuggestion } = {};
-
-/**
- * Tracks the last edit as a patch
- */
-let lastEditPatch: Patch | undefined;
 
 /**
  * Wraps a user-provided fetch method so that users
@@ -76,7 +65,7 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
       return localSuggestion;
     }
 
-    const prediction = await onSuggestionRequest(prefix, suffix, lastEditPatch);
+    const prediction = await onSuggestionRequest(prefix, suffix);
     
     // Create a diff suggestion
     const diffSuggestion: DiffSuggestion = {
@@ -92,48 +81,44 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
 }
 
 /**
- * Updates the last edit patch based on the transaction
+ * Simple diff calculation to highlight changes (copied from inline-suggestion.ts)
  */
-export function updateLastEditPatch(
-  oldDoc: string,
-  newDoc: string,
-  from: number,
-  _to: number,
-  _insert: string
-): Patch | undefined {
-  // If no change, return undefined
-  if (oldDoc === newDoc) {
-    return undefined;
-  }
-
-  console.log("=====oldDoc======")
-  console.log(oldDoc)
-  console.log("=====newDoc======")
-  console.log(newDoc)
-  console.log("=====end======")
-
-  // Use CodeMirror's Text object to properly calculate line numbers
-  const oldText = Text.of(oldDoc.split('\n'));
-  const lineNumber = oldText.lineAt(from).number + 1; // Convert to 1-indexed
-
-  // Extract the original and modified lines
-  const originalLines = oldDoc.split('\n');
-  const modifiedLines = newDoc.split('\n');
+function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
   
-  // Find the line that changed
-  const originalLine = originalLines[lineNumber - 1] || '';
-  const modifiedLine = modifiedLines[lineNumber - 1] || '';
-
-  // Create context lines (2 lines before and after)
-  const contextBefore = originalLines.slice(Math.max(0, lineNumber - 3), lineNumber - 1);
-  const contextAfter = originalLines.slice(lineNumber, Math.min(originalLines.length, lineNumber + 2));
-
+  const added: string[] = [];
+  const removed: string[] = [];
+  
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+    
+    if (oldLine !== newLine) {
+      if (oldLine) {
+        // Show removed line with red color
+        removed.push(`- ${oldLine}`);
+      }
+      if (newLine) {
+        // Show added line with green color
+        added.push(`+ ${newLine}`);
+      }
+    }
+  }
+  
+  // If no changes, show a simple replacement message
+  if (added.length === 0 && removed.length === 0) {
+    return {
+      added: `→ ${newText.trim()}`,
+      removed: ''
+    };
+  }
+  
   return {
-    line: lineNumber,
-    original: originalLine,
-    modified: modifiedLine,
-    contextBefore,
-    contextAfter,
+    added: added.join('\n'),
+    removed: removed.join('\n')
   };
 }
 
@@ -151,9 +136,6 @@ export const inlineCopilot = (
     fetchFn: wrapUserFetcher(onSuggestionRequest),
     delay,
     acceptOnClick,
-    onEdit: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => {
-      lastEditPatch = updateLastEditPatch(oldDoc, newDoc, from, to, insert);
-    },
   });
 };
 
@@ -161,18 +143,4 @@ export const clearLocalCache = () => {
   Object.keys(localSuggestionsCache).forEach((key) => {
     delete localSuggestionsCache[key];
   });
-};
-
-/**
- * Get the last edit patch
- */
-export const getLastEditPatch = (): Patch | undefined => {
-  return lastEditPatch;
-};
-
-/**
- * Clear the last edit patch
- */
-export const clearLastEditPatch = () => {
-  lastEditPatch = undefined;
 };
