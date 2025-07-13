@@ -36,7 +36,6 @@ export interface DiffSuggestion {
   newText: string;
   from: number;
   to: number;
-  replaceEntireDocument?: boolean; // Add this property
 }
 
 /**
@@ -85,7 +84,6 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
       newText: prediction.trim(), // Ensure clean text without extra newlines
       from: from,
       to: to,
-      replaceEntireDocument: true, // Replace the entire document
     };
     
     localSuggestionsCache[key] = diffSuggestion;
@@ -107,6 +105,12 @@ export function updateLastEditPatch(
   if (oldDoc === newDoc) {
     return undefined;
   }
+
+  console.log("=====oldDoc======")
+  console.log(oldDoc)
+  console.log("=====newDoc======")
+  console.log(newDoc)
+  console.log("=====end======")
 
   // Use CodeMirror's Text object to properly calculate line numbers
   const oldText = Text.of(oldDoc.split('\n'));

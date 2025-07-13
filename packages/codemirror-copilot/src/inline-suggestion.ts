@@ -33,7 +33,6 @@ interface DiffSuggestion {
   newText: string;
   from: number;
   to: number;
-  replaceEntireDocument?: boolean; // New flag to indicate full document replacement
 }
 
 /**
@@ -117,8 +116,22 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
  * the AI suggestion.
  */
 function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
-  const widgets = [];
-  
+  console.log("=====suggestion oldText======")
+  console.log(suggestion.oldText)
+  console.log("=====end suggestion oldText======")
+  console.log("=====suggestion newText======")
+  console.log(suggestion.newText)
+  console.log("=====end suggestion newText======\n\n")
+
+  const diff = calculateDiff(suggestion.oldText, suggestion.newText);
+
+  console.log("=====diff added======")
+  console.log(diff.added)
+  console.log("=====end diff added======")
+  console.log("=====diff removed======")
+  console.log(diff.removed)
+  console.log("=====end diff removed======")
+
   // Create decoration for the diff display
   const w = Decoration.widget({
     widget: new InlineSuggestionWidget(suggestion),
@@ -126,10 +139,21 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   });
   
   // If replacing entire document, show at the beginning
-  const position = suggestion.replaceEntireDocument ? 0 : suggestion.from;
+  const position = 0;
+  const widgets = [];
   widgets.push(w.range(position));
   
   return Decoration.set(widgets);
+
+  // REPLACE IN THE MIDDLE OF THE DOCUMENT
+  // const pos = suggestion.from;
+  // const widgets = [];
+  // const w = Decoration.widget({
+  //   widget: new InlineSuggestionWidget(suggestion),
+  //   side: 1,
+  // });
+  // widgets.push(w.range(pos));
+  // return Decoration.set(widgets);
 }
 
 export const suggestionConfigFacet = Facet.define<
@@ -182,9 +206,7 @@ class InlineSuggestionWidget extends WidgetType {
     // Add a header to indicate this is a suggestion
     const header = document.createElement("div");
     header.style.cssText = "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
-    header.textContent = this.suggestion.replaceEntireDocument 
-      ? "💡 AI Document Rewrite" 
-      : "💡 AI Suggestion";
+    header.textContent = "💡 AI Suggestion";
     container.appendChild(header);
     
     if (diff.removed) {
@@ -231,7 +253,6 @@ class InlineSuggestionWidget extends WidgetType {
         suggestion.newText,
         suggestion.from,
         suggestion.to,
-        suggestion.replaceEntireDocument,
       ),
     });
     return true;
@@ -339,7 +360,6 @@ const inlineSuggestionKeymap = Prec.highest(
             suggestion.newText,
             suggestion.from,
             suggestion.to,
-            suggestion.replaceEntireDocument,
           ),
         });
         return true;
@@ -370,9 +390,9 @@ function insertDiffText(
   text: string,
   from: number,
   to: number,
-  replaceEntireDocument: boolean = false,
 ): TransactionSpec {
-  if (replaceEntireDocument) {
+  // Replace the entire document
+  if (true) {
     // Replace the entire document, ensuring no extra newlines
     const cleanText = text.trim();
     return {

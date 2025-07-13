@@ -1,4 +1,4 @@
-import CodeMirror from "@uiw/react-codemirror";
+import dynamic from "next/dynamic";
 import { python } from "@codemirror/lang-python";
 import { dracula } from "@uiw/codemirror-theme-dracula";
 
@@ -13,8 +13,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
-const DEFAULTCODE = `def add(num1, num2):
-  return`;
+// Dynamically import CodeMirror to avoid SSR issues
+const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-[300px] bg-gray-100 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex items-center justify-center">
+      <div className="text-gray-500 dark:text-gray-400">Loading editor...</div>
+    </div>
+  ),
+});
+
+// const DEFAULTCODE = `def add(num1, num2):
+//   return`;
+
+const DEFAULTCODE = `import pandas as pd
+file_path = "data.csv"
+df = pd.read`;
 
 function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");

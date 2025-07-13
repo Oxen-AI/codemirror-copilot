@@ -48,8 +48,8 @@ ${suffix}
 
   const prediction = chatCompletion.output.content[0].text;
 
-  // Extract the code from <|editable_region_start|> to <|editable_region_end|>
-  const code = prediction.match(/<\|editable_region_start\|>(.*?)<\|editable_region_end\|>/s)[1];
+  // Remove special tokens <|editable_region_start|>, <|user_cursor_is_here|>, <|editable_region_end|>
+  const code = prediction.replace(/<\|editable_region_start\|>|<\|user_cursor_is_here\|>|<\|editable_region_end\|>/g, '');
   return code;
 }
 
