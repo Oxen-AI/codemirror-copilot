@@ -41,6 +41,49 @@ function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
+  const [lastPrompt, setLastPrompt] = useState("");
+  const [saveMessage, setSaveMessage] = useState(null);
+  const [saveStatus, setSaveStatus] = useState(null);
+
+  const saveExample = async (accepted) => {
+    if (!lastPrompt || !lastPrediction) return;
+    
+    setSaveMessage(null);
+    setSaveStatus(null);
+    
+    try {
+      const response = await fetch("/api/save-example", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prompt: lastPrompt,
+          response: lastPrediction,
+          accepted: accepted,
+        }),
+      });
+
+      if (response.ok) {
+        setSaveStatus("success");
+        setSaveMessage(`Example ${accepted ? "accepted" : "rejected"} and saved successfully!`);
+      } else {
+        const errorData = await response.json();
+        setSaveStatus("error");
+        setSaveMessage(`Error: ${errorData.error || "Failed to save example"}`);
+      }
+    } catch (error) {
+      console.error("Error saving example:", error);
+      setSaveStatus("error");
+      setSaveMessage("Network error: Could not save example");
+    }
+
+    // Clear message after 3 seconds
+    setTimeout(() => {
+      setSaveMessage(null);
+      setSaveStatus(null);
+    }, 3000);
+  };
   
   return (
     <>
@@ -107,8 +150,9 @@ function CodeEditor() {
                 }),
               });
 
-              const { prediction } = await res.json();
+              const { prediction, prompt } = await res.json();
               setLastPrediction(prediction);
+              setLastPrompt(prompt);
               return prediction;
             },
             500,
@@ -130,14 +174,41 @@ function CodeEditor() {
         </label>
       </div>
       
-      {/* {lastPrediction && (
+      {lastPrompt && (
         <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prompt:</h3>
+          <pre className="text-xs font-mono text-gray-400 whitespace-pre-wrap mb-4">
+            {lastPrompt}
+          </pre>
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prediction:</h3>
-          <pre className="text-xs font-mono">
+          <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap">
             {lastPrediction}
           </pre>
+          <div className="mt-4 flex gap-2">
+            <button
+              onClick={() => saveExample(true)}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded border border-green-500"
+            >
+              ✓ Good Example
+            </button>
+            <button
+              onClick={() => saveExample(false)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded border border-red-500"
+            >
+              ✗ Bad Example
+            </button>
+          </div>
+          {saveMessage && (
+            <div className={`mt-2 p-2 rounded text-sm ${
+              saveStatus === "success" 
+                ? "bg-green-800 text-green-200 border border-green-600" 
+                : "bg-red-800 text-red-200 border border-red-600"
+            }`}>
+              {saveMessage}
+            </div>
+          )}
         </div>
-      )} */}
+      )}
     </>
   );
 }

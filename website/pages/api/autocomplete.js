@@ -42,7 +42,7 @@ ${prefix}<|user_cursor_is_here|>${suffix}
 
   // Remove special tokens <|editable_region_start|>, <|user_cursor_is_here|>, <|editable_region_end|> and any trailing newlines
   const code = prediction.replace(/<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g, '');
-  return code;
+  return { prediction: code, prompt };
 }
 
 export default async function handler(req, res) {
@@ -53,6 +53,6 @@ export default async function handler(req, res) {
   console.log("language", language)
   console.log("lastPrediction", lastPrediction)
   console.log("lastPatch", lastPatch)
-  const prediction = await completionOpenAI(prefix, suffix, lastPrediction, model, language, lastPatch);
-  res.status(200).json({ prediction })
+  const { prediction, prompt } = await completionOpenAI(prefix, suffix, lastPrediction, model, language, lastPatch);
+  res.status(200).json({ prediction, prompt })
 }
