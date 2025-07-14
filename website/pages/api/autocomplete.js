@@ -5,17 +5,20 @@ const openai = new OpenAI({
   baseURL: "https://hub.oxen.ai/api",
 });
 
-async function completionOpenAI(prefix, suffix, lastPrediction, model="baseten:dgonz-flexible-coffee-harrier", language) {
-  const prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
+async function completionOpenAI(prefix, suffix, lastPrediction, model="baseten:dgonz-flexible-coffee-harrier", language, lastPatch) {
+  let prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
 
 Last Edit:
-${lastPrediction}
+${lastPatch ? `${lastPatch.contextBefore ? lastPatch.contextBefore.map(line => `   ${line}`).join('\n') + '\n' : ''}   ${lastPatch.original}
+   ${lastPatch.modified}
+${lastPatch.contextAfter ? '\n' + lastPatch.contextAfter.map(line => `   ${line}`).join('\n') : ''}` : ''}
 
 Context:
 <|editable_region_start|>
 ${prefix}<|user_cursor_is_here|>${suffix}
 <|editable_region_end|>
-`
+`;
+
   const chatCompletion = await openai.chat.completions.create({
     messages: [
       { 
@@ -49,6 +52,7 @@ export default async function handler(req, res) {
   console.log("model", model)
   console.log("language", language)
   console.log("lastPrediction", lastPrediction)
+  console.log("lastPatch", lastPatch)
   const prediction = await completionOpenAI(prefix, suffix, lastPrediction, model, language, lastPatch);
   res.status(200).json({ prediction })
 }

@@ -33,7 +33,8 @@ df = pd.read`;
 function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
-  const [lastPrediction, setLastPrediction] = useState("");
+  const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
+  const [lastPatch, setLastPatch] = useState(null);
   
   return (
     <>
@@ -84,7 +85,7 @@ function CodeEditor() {
         extensions={[
           python(),
           inlineCopilot(
-            async (prefix, suffix) => {
+            async (prefix, suffix, patch) => {
               const res = await fetch("/api/autocomplete", {
                 method: "POST",
                 headers: {
@@ -96,11 +97,13 @@ function CodeEditor() {
                   language: "python",
                   model,
                   lastPrediction: lastPrediction,
+                  lastPatch: patch,
                 }),
               });
 
               const { prediction } = await res.json();
               setLastPrediction(prediction);
+              setLastPatch(patch);
               return prediction;
             },
             500,
@@ -127,6 +130,15 @@ function CodeEditor() {
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prediction:</h3>
           <pre className="text-xs font-mono">
             {lastPrediction}
+          </pre>
+        </div>
+      )}
+      
+      {lastPatch && (
+        <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
+          <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Patch:</h3>
+          <pre className="text-xs font-mono">
+            {JSON.stringify(lastPatch, null, 2)}
           </pre>
         </div>
       )}

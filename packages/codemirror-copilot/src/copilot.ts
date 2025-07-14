@@ -46,6 +46,9 @@ export type SuggestionRequestCallback = (
 
 const localSuggestionsCache: { [key: string]: DiffSuggestion } = {};
 
+// Track the last prediction for diff calculation
+let lastPrediction: string | null = null;
+
 /**
  * Wraps a user-provided fetch method so that users
  * don't have to interact directly with the EditorState
@@ -65,7 +68,20 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
       return localSuggestion;
     }
 
-    const prediction = await onSuggestionRequest(prefix, suffix);
+    // Calculate diff from last prediction if available
+    let patch: Patch | undefined;
+    if (lastPrediction) {
+      patch = calculateDetailedPatch(lastPrediction, text);
+    }
+
+    console.log("=====patch======")
+    console.log(patch)
+    console.log("=====end patch======")
+
+    const prediction = await onSuggestionRequest(prefix, suffix, patch);
+    
+    // Store the current prediction for next diff calculation
+    lastPrediction = prediction.trim();
     
     // Create a diff suggestion
     const diffSuggestion: DiffSuggestion = {
@@ -81,7 +97,7 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
 }
 
 /**
- * Simple diff calculation to highlight changes (copied from inline-suggestion.ts)
+ * Simple diff calculation to highlight changes
  
 function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
   const oldLines = oldText.split('\n');
@@ -121,7 +137,50 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
     removed: removed.join('\n')
   };
 }
-*/
+  */
+
+/**
+ * Calculate a detailed patch with line numbers and context
+ */
+function calculateDetailedPatch(lastPrediction: string, currentText: string): Patch | undefined {
+  const lastLines = lastPrediction.split('\n');
+  const currentLines = currentText.split('\n');
+  
+  // Find the first line that differs
+  let firstDiffLine = -1;
+  const maxLines = Math.max(lastLines.length, currentLines.length);
+  
+  for (let i = 0; i < maxLines; i++) {
+    const lastLine = lastLines[i] || '';
+    const currentLine = currentLines[i] || '';
+    
+    if (lastLine !== currentLine) {
+      firstDiffLine = i + 1; // 1-indexed line number
+      break;
+    }
+  }
+  
+  if (firstDiffLine === -1) {
+    return undefined; // No differences found
+  }
+  
+  // Get context lines (2 lines before and after)
+  const contextBefore = lastLines.slice(Math.max(0, firstDiffLine - 3), firstDiffLine - 1);
+  const contextAfter = lastLines.slice(firstDiffLine, Math.min(lastLines.length, firstDiffLine + 2));
+  
+  // Get the original and modified lines
+  const originalLine = lastLines[firstDiffLine - 1] || '';
+  const modifiedLine = currentLines[firstDiffLine - 1] || '';
+  
+  return {
+    line: firstDiffLine,
+    original: `- ${originalLine}`,
+    modified: `+ ${modifiedLine}`,
+    contextBefore: contextBefore.length > 0 ? contextBefore : undefined,
+    contextAfter: contextAfter.length > 0 ? contextAfter : undefined,
+    diffString: `- ${originalLine}\n+ ${modifiedLine}`
+  };
+}
 
 /**
  * Configure the UI, state, and keymap to power
@@ -144,4 +203,6 @@ export const clearLocalCache = () => {
   Object.keys(localSuggestionsCache).forEach((key) => {
     delete localSuggestionsCache[key];
   });
+  // Also clear the tracking variable
+  lastPrediction = null;
 };
