@@ -69,7 +69,7 @@ const InlineSuggestionEffect = StateEffect.define<{
 
 /**
  * Simple diff calculation to highlight changes
- */
+ 
 function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
@@ -108,6 +108,7 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
     removed: removed.join('\n')
   };
 }
+*/
 
 /**
  * Calculate the specific ranges where changes occur between old and new text
@@ -340,6 +341,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
 
   const decorations = [];
   const docLength = view.state.doc.length;
+  let lastRangeEnd = 0;
 
   // Create all decorations and sort them by position
   for (const range of changeRanges) {
@@ -348,6 +350,9 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     const to = Math.max(from, Math.min(range.to, docLength));
     
     if (from < to) {
+      // Track the end of the last range for placing the accept indicator
+      lastRangeEnd = Math.max(lastRangeEnd, to);
+      
       // Add ghost text decoration
       const ghostWidget = Decoration.replace({
         widget: new GhostTextWidget(range.text, suggestion),
@@ -355,25 +360,16 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
         inclusiveEnd: false
       });
       decorations.push(ghostWidget.range(from, to));
-      
-      // Add accept/reject button at the end of the line
-      try {
-        const lineEnd = view.state.doc.lineAt(to).to;
-        const buttonPosition = Math.min(lineEnd, docLength);
-        const acceptWidget = Decoration.widget({
-          widget: new AcceptIndicatorWidget(suggestion),
-          side: 1
-        });
-        decorations.push(acceptWidget.range(buttonPosition));
-      } catch (error) {
-        // If we can't get the line end, place the button after the range
-        const acceptWidget = Decoration.widget({
-          widget: new AcceptIndicatorWidget(suggestion),
-          side: 1
-        });
-        decorations.push(acceptWidget.range(to));
-      }
     }
+  }
+
+  // Add accept/reject button at the end of the last range
+  if (lastRangeEnd > 0) {
+    const acceptWidget = Decoration.widget({
+      widget: new AcceptIndicatorWidget(suggestion),
+      side: 1  // 1 means after the position
+    });
+    decorations.push(acceptWidget.range(lastRangeEnd));
   }
 
   // Sort decorations by their from position to ensure they're in order
@@ -403,12 +399,11 @@ export const suggestionConfigFacet = Facet.define<
  * Renders the suggestion inline
  * with the rest of the code in the editor.
  */
+
+/*
 class InlineSuggestionWidget extends WidgetType {
   suggestion: DiffSuggestion;
 
-  /**
-   * Create a new suggestion widget.
-   */
   constructor(suggestion: DiffSuggestion) {
     super();
     this.suggestion = suggestion;
@@ -488,6 +483,7 @@ class InlineSuggestionWidget extends WidgetType {
     return true;
   }
 }
+*/
 
 /**
  * Listens to document updates and calls `fetchFn`

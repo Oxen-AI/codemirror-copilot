@@ -1,6 +1,6 @@
 import { inlineSuggestion, type DiffSuggestion } from "./inline-suggestion";
 import type { EditorState } from "@codemirror/state";
-import { Text } from "@codemirror/state";
+// import { Text } from "@codemirror/state";
 
 /**
  * Represents a diff/patch in the format shown in the example
@@ -82,7 +82,7 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
 
 /**
  * Simple diff calculation to highlight changes (copied from inline-suggestion.ts)
- */
+ 
 function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
@@ -121,6 +121,7 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
     removed: removed.join('\n')
   };
 }
+*/
 
 /**
  * Configure the UI, state, and keymap to power
