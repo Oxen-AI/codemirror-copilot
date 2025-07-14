@@ -217,8 +217,6 @@ class GhostTextWidget extends WidgetType {
       ...insertDiffText(
         view.state,
         suggestion.newText,
-        suggestion.from,
-        suggestion.to,
       ),
     });
     return true;
@@ -299,8 +297,6 @@ class AcceptIndicatorWidget extends WidgetType {
       ...insertDiffText(
         view.state,
         suggestion.newText,
-        suggestion.from,
-        suggestion.to,
       ),
     });
     return true;
@@ -394,96 +390,6 @@ export const suggestionConfigFacet = Facet.define<
     };
   },
 });
-
-/**
- * Renders the suggestion inline
- * with the rest of the code in the editor.
- */
-
-/*
-class InlineSuggestionWidget extends WidgetType {
-  suggestion: DiffSuggestion;
-
-  constructor(suggestion: DiffSuggestion) {
-    super();
-    this.suggestion = suggestion;
-  }
-  
-  toDOM(view: EditorView) {
-    const container = document.createElement("div");
-    container.className = "cm-inline-suggestion";
-    container.style.cssText = `
-      opacity: 0.8;
-      background: rgba(0, 0, 0, 0.08);
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin: 4px 0;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-      font-size: 0.9em;
-      border-left: 4px solid #007acc;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      max-width: 100%;
-      overflow-x: auto;
-    `;
-    
-    const diff = calculateDiff(this.suggestion.oldText, this.suggestion.newText);
-    
-    // Add a header to indicate this is a suggestion
-    const header = document.createElement("div");
-    header.style.cssText = "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
-    header.textContent = "💡 AI Suggestion";
-    container.appendChild(header);
-    
-    if (diff.removed) {
-      const removedSpan = document.createElement("div");
-      removedSpan.style.cssText = "color: #d73a49; margin-bottom: 4px; font-family: monospace; white-space: pre;";
-      removedSpan.textContent = diff.removed;
-      container.appendChild(removedSpan);
-    }
-    
-    if (diff.added) {
-      const addedSpan = document.createElement("div");
-      addedSpan.style.cssText = "color: #28a745; font-family: monospace; white-space: pre;";
-      addedSpan.textContent = diff.added;
-      container.appendChild(addedSpan);
-    }
-    
-    // Add a hint about how to accept
-    const hint = document.createElement("div");
-    hint.style.cssText = "font-size: 0.75em; color: #666; margin-top: 4px; font-style: italic;";
-    hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
-    container.appendChild(hint);
-    
-    container.onclick = (e) => this.accept(e, view);
-    return container;
-  }
-  
-  accept(e: MouseEvent, view: EditorView) {
-    const config = view.state.facet(suggestionConfigFacet);
-    if (!config.acceptOnClick) return;
-
-    e.stopPropagation();
-    e.preventDefault();
-
-    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
-
-    // If there is no suggestion, do nothing and let the default keymap handle it
-    if (!suggestion) {
-      return false;
-    }
-
-    view.dispatch({
-      ...insertDiffText(
-        view.state,
-        suggestion.newText,
-        suggestion.from,
-        suggestion.to,
-      ),
-    });
-    return true;
-  }
-}
-*/
 
 /**
  * Listens to document updates and calls `fetchFn`
@@ -585,8 +491,6 @@ const inlineSuggestionKeymap = Prec.highest(
           ...insertDiffText(
             view.state,
             suggestion.newText,
-            suggestion.from,
-            suggestion.to,
           ),
         });
         return true;
@@ -615,41 +519,12 @@ const inlineSuggestionKeymap = Prec.highest(
 function insertDiffText(
   state: EditorState,
   text: string,
-  from: number,
-  to: number,
 ): TransactionSpec {
-  // Replace the entire document
-  if (true) {
-    // Replace the entire document, ensuring no extra newlines
-    const cleanText = text.trim();
-    return {
-      changes: { from: 0, to: state.doc.length, insert: cleanText },
-      selection: EditorSelection.cursor(cleanText.length),
-      userEvent: "input.complete",
-    };
-  }
-  
-  // Original behavior for partial replacement
+  // Replace the entire document, ensuring no extra newlines
+  const cleanText = text.trim();
   return {
-    ...state.changeByRange((range) => {
-      if (range == state.selection.main)
-        return {
-          changes: { from: from, to: to, insert: text },
-          range: EditorSelection.cursor(from + text.length),
-        };
-      const len = to - from;
-      if (
-        !range.empty ||
-        (len &&
-          state.sliceDoc(range.from - len, range.from) !=
-            state.sliceDoc(from, to))
-      )
-        return { range };
-      return {
-        changes: { from: range.from - len, to: range.from, insert: text },
-        range: EditorSelection.cursor(range.from - len + text.length),
-      };
-    }),
+    changes: { from: 0, to: state.doc.length, insert: cleanText },
+    selection: EditorSelection.cursor(cleanText.length),
     userEvent: "input.complete",
   };
 }
