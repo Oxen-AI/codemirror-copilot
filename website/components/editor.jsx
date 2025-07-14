@@ -23,12 +23,12 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
   ),
 });
 
-const DEFAULTCODE = `def add(num1, num2):
-  return`;
+// const DEFAULTCODE = `def add(num1, num2):
+//   return`;
 
-// const DEFAULTCODE = `import pandas as pd
-// file_path = "data.parq"
-// df = pd.read`;
+const DEFAULTCODE = `import pandas as pd
+file_path = "data.parq"
+df = pd.read`;
 
 function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");

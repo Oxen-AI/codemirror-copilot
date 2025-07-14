@@ -77,97 +77,44 @@ function calculateChangeRanges(oldText: string, newText: string, docLength: numb
   
   let currentPos = 0;
   
-  // Process existing lines (up to the length of old text)
-  for (let i = 0; i < oldLines.length; i++) {
+  // Process lines that exist in both old and new text
+  const minLines = Math.min(oldLines.length, newLines.length);
+  for (let i = 0; i < minLines; i++) {
     const oldLine = oldLines[i];
-    const newLine = newLines[i] || '';
+    const newLine = newLines[i];
     
     if (oldLine !== newLine) {
-      // Calculate the position where this line starts
       const lineStart = currentPos;
       const lineEnd = lineStart + oldLine.length;
       
-      if (newLine) {
-        // Add ghost text for the new line
-        ranges.push({
-          from: lineStart,
-          to: lineEnd,
-          text: newLine
-        });
-      }
+      ranges.push({
+        from: lineStart,
+        to: lineEnd,
+        text: newLine
+      });
     }
     
-    // Move to next line position (account for the newline character)
-    currentPos += oldLine.length;
-    if (i < oldLines.length - 1) {
-      currentPos += 1; // +1 for newline character
-    }
+    currentPos += oldLine.length + 1; // +1 for newline character
   }
   
   // Handle additional lines in new text beyond the old text
   if (newLines.length > oldLines.length) {
-    // Calculate the position at the end of the old text
-    const endOfOldText = currentPos;
-    
-    // Get all the additional lines from new text
     const additionalLines = newLines.slice(oldLines.length);
+    const additionalText = additionalLines.join('\n');
     
-    // Check if any of the additional lines extend past the document length
-    let hasExtendedRange = false;
-    let extendedText = '';
-    let currentAdditionalPos = endOfOldText;
-    let extendedRangeEnd = docLength; // Track where the extended range should end
-    
-    for (let i = 0; i < additionalLines.length; i++) {
-      const additionalLine = additionalLines[i];
-      
-      if (additionalLine !== undefined) {
-        // Check if this line extends past the document length
-        if (currentAdditionalPos >= docLength) {
-          // This and all subsequent lines should be concatenated into one range
-          hasExtendedRange = true;
-          if (extendedText === '') {
-            // Start the extended range at the end of the document
-            extendedText = additionalLine;
-          } else {
-            // Add newline and continue the extended range
-            extendedText += '\n' + additionalLine;
-          }
-          // Update the end position for the extended range
-          extendedRangeEnd = docLength + extendedText.length;
-        } else {
-          // If we haven't started an extended range yet, add individual decorations
-          if (!hasExtendedRange) {
-            ranges.push({
-              from: currentAdditionalPos,
-              to: currentAdditionalPos + additionalLine.length,
-              text: additionalLine
-            });
-          } else {
-            // We've already started an extended range, so continue building it
-            extendedText += '\n' + additionalLine;
-            // Update the end position for the extended range
-            extendedRangeEnd = docLength + extendedText.length;
-          }
-        }
-        
-        // Move to the next line position (account for newline character)
-        currentAdditionalPos += additionalLine.length;
-        if (i < additionalLines.length - 1) {
-          currentAdditionalPos += 1; // +1 for newline character
-        }
-      }
-    }
-    
-    console.log(`hasExtendedRange: ${hasExtendedRange}, extendedText: "${extendedText}"`);
-    
-    // Add the extended range if we have one
-    if (hasExtendedRange && extendedText !== '') {
-      console.log(`Adding extended range: from=${docLength}, to=${extendedRangeEnd}, text="${extendedText}"`);
+    // If the current position is beyond document length, place at end
+    if (currentPos >= docLength) {
       ranges.push({
         from: docLength,
-        to: extendedRangeEnd,
-        text: extendedText
+        to: docLength + additionalText.length,
+        text: additionalText
+      });
+    } else {
+      // Place at current position
+      ranges.push({
+        from: currentPos,
+        to: currentPos + additionalText.length,
+        text: additionalText
       });
     }
   }
@@ -375,20 +322,18 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
   console.log("=====end lastRangeEnd======")
 
   // Add accept/reject button at the end of the last range
+  console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
+  
+  // Place the widget after the last ghost text range
+  let widgetPosition = lastRangeEnd;
   if (lastRangeEnd > 0) {
-    console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
-    
-    // Place the widget after the last ghost text range
-    const widgetPosition = lastRangeEnd;
+    widgetPosition = lastRangeEnd;
     console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
-    
     const acceptWidget = Decoration.widget({
       widget: new AcceptIndicatorWidget(suggestion),
       side: 1  // 1 means after the position
     });
     decorations.push(acceptWidget.range(widgetPosition));
-  } else {
-    console.log(`Not adding AcceptIndicatorWidget because lastRangeEnd is: ${lastRangeEnd}`);
   }
 
   // Sort decorations by their from position to ensure they're in order
