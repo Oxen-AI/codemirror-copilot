@@ -68,52 +68,9 @@ const InlineSuggestionEffect = StateEffect.define<{
 }>();
 
 /**
- * Simple diff calculation to highlight changes
- 
-function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  
-  const added: string[] = [];
-  const removed: string[] = [];
-  
-  const maxLines = Math.max(oldLines.length, newLines.length);
-  
-  for (let i = 0; i < maxLines; i++) {
-    const oldLine = oldLines[i] || '';
-    const newLine = newLines[i] || '';
-    
-    if (oldLine !== newLine) {
-      if (oldLine) {
-        // Show removed line with red color
-        removed.push(`- ${oldLine}`);
-      }
-      if (newLine) {
-        // Show added line with green color
-        added.push(`+ ${newLine}`);
-      }
-    }
-  }
-  
-  // If no changes, show a simple replacement message
-  if (added.length === 0 && removed.length === 0) {
-    return {
-      added: `→ ${newText.trim()}`,
-      removed: ''
-    };
-  }
-  
-  return {
-    added: added.join('\n'),
-    removed: removed.join('\n')
-  };
-}
-*/
-
-/**
  * Calculate the specific ranges where changes occur between old and new text
  */
-function calculateChangeRanges(oldText: string, newText: string): Array<{ from: number; to: number; text: string }> {
+function calculateChangeRanges(oldText: string, newText: string, docLength: number): Array<{ from: number; to: number; text: string }> {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   const ranges: Array<{ from: number; to: number; text: string }> = [];
@@ -154,14 +111,63 @@ function calculateChangeRanges(oldText: string, newText: string): Array<{ from: 
     
     // Get all the additional lines from new text
     const additionalLines = newLines.slice(oldLines.length);
-    const additionalText = additionalLines.join('\n');
     
-    if (additionalText) {
-      // Add one large completion block for all additional content
+    // Check if any of the additional lines extend past the document length
+    let hasExtendedRange = false;
+    let extendedText = '';
+    let currentAdditionalPos = endOfOldText;
+    let extendedRangeEnd = docLength; // Track where the extended range should end
+    
+    for (let i = 0; i < additionalLines.length; i++) {
+      const additionalLine = additionalLines[i];
+      
+      if (additionalLine !== undefined) {
+        // Check if this line extends past the document length
+        if (currentAdditionalPos >= docLength) {
+          // This and all subsequent lines should be concatenated into one range
+          hasExtendedRange = true;
+          if (extendedText === '') {
+            // Start the extended range at the end of the document
+            extendedText = additionalLine;
+          } else {
+            // Add newline and continue the extended range
+            extendedText += '\n' + additionalLine;
+          }
+          // Update the end position for the extended range
+          extendedRangeEnd = docLength + extendedText.length;
+        } else {
+          // If we haven't started an extended range yet, add individual decorations
+          if (!hasExtendedRange) {
+            ranges.push({
+              from: currentAdditionalPos,
+              to: currentAdditionalPos + additionalLine.length,
+              text: additionalLine
+            });
+          } else {
+            // We've already started an extended range, so continue building it
+            extendedText += '\n' + additionalLine;
+            // Update the end position for the extended range
+            extendedRangeEnd = docLength + extendedText.length;
+          }
+        }
+        
+        // Move to the next line position (account for newline character)
+        currentAdditionalPos += additionalLine.length;
+        if (i < additionalLines.length - 1) {
+          currentAdditionalPos += 1; // +1 for newline character
+        }
+      }
+    }
+    
+    console.log(`hasExtendedRange: ${hasExtendedRange}, extendedText: "${extendedText}"`);
+    
+    // Add the extended range if we have one
+    if (hasExtendedRange && extendedText !== '') {
+      console.log(`Adding extended range: from=${docLength}, to=${extendedRangeEnd}, text="${extendedText}"`);
       ranges.push({
-        from: endOfOldText,
-        to: endOfOldText,
-        text: additionalText
+        from: docLength,
+        to: extendedRangeEnd,
+        text: extendedText
       });
     }
   }
@@ -235,6 +241,7 @@ class AcceptIndicatorWidget extends WidgetType {
   }
   
   toDOM(view: EditorView) {
+    console.log("AcceptIndicatorWidget.toDOM called");
     const container = document.createElement("div");
     container.style.cssText = `
       display: inline-flex;
@@ -327,27 +334,31 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
   console.log(suggestion.newText)
   console.log("=====end suggestion newText======\n\n")
 
-  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText);
+  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText, view.state.doc.length);
   
   console.log("=====change ranges======")
   for (const range of changeRanges) {
-    console.log(range)
+    // print range.from and range.to and range.text in a single line
+    console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
   }
   console.log("=====end change ranges======")
 
   const decorations = [];
-  const docLength = view.state.doc.length;
+  // const docLength = view.state.doc.length;
   let lastRangeEnd = 0;
 
   // Create all decorations and sort them by position
   for (const range of changeRanges) {
     // Validate that the range is within document bounds
-    const from = Math.max(0, Math.min(range.from, docLength));
-    const to = Math.max(from, Math.min(range.to, docLength));
+    const from = range.from; // Math.max(0, Math.min(range.from, docLength));
+    const to = range.to; // Math.max(from, Math.min(range.to, docLength));
+    
+    console.log(`Processing range: from=${from}, to=${to}, text="${range.text}"`);
     
     if (from < to) {
       // Track the end of the last range for placing the accept indicator
       lastRangeEnd = Math.max(lastRangeEnd, to);
+      console.log(`Updated lastRangeEnd to: ${lastRangeEnd}`);
       
       // Add ghost text decoration
       const ghostWidget = Decoration.replace({
@@ -359,13 +370,25 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     }
   }
 
+  console.log("=====lastRangeEnd======")
+  console.log(lastRangeEnd)
+  console.log("=====end lastRangeEnd======")
+
   // Add accept/reject button at the end of the last range
   if (lastRangeEnd > 0) {
+    console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
+    
+    // Place the widget after the last ghost text range
+    const widgetPosition = lastRangeEnd;
+    console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
+    
     const acceptWidget = Decoration.widget({
       widget: new AcceptIndicatorWidget(suggestion),
       side: 1  // 1 means after the position
     });
-    decorations.push(acceptWidget.range(lastRangeEnd));
+    decorations.push(acceptWidget.range(widgetPosition));
+  } else {
+    console.log(`Not adding AcceptIndicatorWidget because lastRangeEnd is: ${lastRangeEnd}`);
   }
 
   // Sort decorations by their from position to ensure they're in order
@@ -374,6 +397,11 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     const bFrom = b.from;
     return aFrom - bFrom;
   });
+  
+  console.log("Final sorted decorations:");
+  for (const decoration of decorations) {
+    console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
+  }
   
   return Decoration.set(decorations);
 }
