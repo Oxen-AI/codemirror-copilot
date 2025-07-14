@@ -73,12 +73,26 @@ const InlineSuggestionEffect = StateEffect.define<{
 function calculateChangeRanges(oldText: string, newText: string, docLength: number): Array<{ from: number; to: number; text: string }> {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
+  
+  // Remove empty string at the end if present (happens when text ends with newline)
+  if (oldLines.length > 0 && oldLines[oldLines.length - 1] === '') {
+    oldLines.pop();
+  }
+  if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
+    newLines.pop();
+  }
+  console.log("oldLines", oldLines);
+  console.log("newLines", newLines);
   const ranges: Array<{ from: number; to: number; text: string }> = [];
   
   let currentPos = 0;
   
   // Process lines that exist in both old and new text
   const minLines = Math.min(oldLines.length, newLines.length);
+  console.log("minLines", minLines);
+  console.log("oldLines", oldLines.length);
+  console.log("newLines", newLines.length);
+
   for (let i = 0; i < minLines; i++) {
     const oldLine = oldLines[i];
     const newLine = newLines[i];

@@ -27,8 +27,15 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
 //   return`;
 
 const DEFAULTCODE = `import pandas as pd
-file_path = "data.parq"
-df = pd.read`;
+file_path = "data.parquet"
+df = pd.read_parquet(file_path)
+`;
+
+// const DEFAULTCODE = `import pandas as pd
+// file_path = "data.parquet"
+// df = pd.read_parquet(file_path)
+
+// # save to csv`;
 
 function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
@@ -130,15 +137,6 @@ function CodeEditor() {
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prediction:</h3>
           <pre className="text-xs font-mono">
             {lastPrediction}
-          </pre>
-        </div>
-      )}
-      
-      {lastPatch && (
-        <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
-          <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Patch:</h3>
-          <pre className="text-xs font-mono">
-            {JSON.stringify(lastPatch, null, 2)}
           </pre>
         </div>
       )}
