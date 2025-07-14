@@ -97,49 +97,6 @@ function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
 }
 
 /**
- * Simple diff calculation to highlight changes
- 
-function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  
-  const added: string[] = [];
-  const removed: string[] = [];
-  
-  const maxLines = Math.max(oldLines.length, newLines.length);
-  
-  for (let i = 0; i < maxLines; i++) {
-    const oldLine = oldLines[i] || '';
-    const newLine = newLines[i] || '';
-    
-    if (oldLine !== newLine) {
-      if (oldLine) {
-        // Show removed line with red color
-        removed.push(`- ${oldLine}`);
-      }
-      if (newLine) {
-        // Show added line with green color
-        added.push(`+ ${newLine}`);
-      }
-    }
-  }
-  
-  // If no changes, show a simple replacement message
-  if (added.length === 0 && removed.length === 0) {
-    return {
-      added: `→ ${newText.trim()}`,
-      removed: ''
-    };
-  }
-  
-  return {
-    added: added.join('\n'),
-    removed: removed.join('\n')
-  };
-}
-  */
-
-/**
  * Calculate a detailed patch with line numbers and context
  */
 function calculateDetailedPatch(lastPrediction: string, currentText: string): Patch | undefined {

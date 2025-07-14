@@ -222,6 +222,7 @@ class AcceptIndicatorWidget extends WidgetType {
       background: rgba(0, 122, 204, 0.1);
       border-radius: 3px;
       border: 1px solid rgba(0, 122, 204, 0.3);
+      margin-left: 8px;
     `;
     acceptSpan.textContent = "💡 Accept [Tab]";
     acceptSpan.onclick = (e) => this.accept(e, view);

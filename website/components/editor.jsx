@@ -27,8 +27,8 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
 //   return`;
 
 const DEFAULTCODE = `import pandas as pd
-file_path = "data.parquet"
-df = pd.read_parquet(file_path)
+file_path = "data.parq"
+df = pd.read_
 `;
 
 // const DEFAULTCODE = `import pandas as pd
@@ -41,7 +41,6 @@ function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
-  const [lastPatch, setLastPatch] = useState(null);
   
   return (
     <>
@@ -52,12 +51,12 @@ function CodeEditor() {
           clearLocalCache();
         }}
       >
-        <SelectTrigger className="w-[180px]">
+        <SelectTrigger className="w-[280px]">
           <SelectValue placeholder="Model" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="baseten:dgonz-flexible-coffee-harrier">
-            Baseten:dgonz-flexible-coffee-harrier
+            Fine-Tuned Llama 3.2-1B-Instruct
           </SelectItem>
           <SelectItem value="gpt-3.5-turbo-1106">
             GPT 3.5 Turbo <Badge variant="secondary">recommended</Badge>
@@ -110,7 +109,6 @@ function CodeEditor() {
 
               const { prediction } = await res.json();
               setLastPrediction(prediction);
-              setLastPatch(patch);
               return prediction;
             },
             500,
@@ -132,14 +130,14 @@ function CodeEditor() {
         </label>
       </div>
       
-      {lastPrediction && (
+      {/* {lastPrediction && (
         <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prediction:</h3>
           <pre className="text-xs font-mono">
             {lastPrediction}
           </pre>
         </div>
-      )}
+      )} */}
     </>
   );
 }
