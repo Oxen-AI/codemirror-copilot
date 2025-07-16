@@ -9,8 +9,9 @@ export default async function handler(req, res) {
   try {
     const { prompt, response, accepted } = req.body;
 
-    if (!prompt || !response || typeof accepted !== 'boolean') {
-      return res.status(400).json({ error: 'Invalid request body' });
+    const validStatuses = ['accepted', 'rejected', 'needs_edit'];
+    if (!prompt || !response || !validStatuses.includes(accepted)) {
+      return res.status(400).json({ error: 'Invalid request body. Status must be accepted, rejected, or needs_edit' });
     }
 
     const example = {
@@ -26,7 +27,7 @@ export default async function handler(req, res) {
     // Append to the file (create if it doesn't exist)
     fs.appendFileSync(filePath, exampleLine);
 
-    console.log(`Saved example: accepted=${accepted}`);
+    console.log(`Saved example: status=${accepted}`);
     
     res.status(200).json({ success: true });
   } catch (error) {

@@ -39,10 +39,7 @@ ${prefix}<|user_cursor_is_here|>${suffix}
 
 
   const prediction = chatCompletion.output.content[0].text;
-
-  // Remove special tokens <|editable_region_start|>, <|user_cursor_is_here|>, <|editable_region_end|> and any trailing newlines
-  const code = prediction.replace(/<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g, '');
-  return { prediction: code, prompt };
+  return { prediction, prompt };
 }
 
 export default async function handler(req, res) {

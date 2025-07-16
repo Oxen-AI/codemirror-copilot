@@ -41,11 +41,12 @@ function CodeEditor() {
   const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
+  const [lastCode, setLastCode] = useState(DEFAULTCODE);
   const [lastPrompt, setLastPrompt] = useState("");
   const [saveMessage, setSaveMessage] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
 
-  const saveExample = async (accepted) => {
+  const saveExample = async (status) => {
     if (!lastPrompt || !lastPrediction) return;
     
     setSaveMessage(null);
@@ -60,13 +61,18 @@ function CodeEditor() {
         body: JSON.stringify({
           prompt: lastPrompt,
           response: lastPrediction,
-          accepted: accepted,
+          accepted: status,
         }),
       });
 
       if (response.ok) {
         setSaveStatus("success");
-        setSaveMessage(`Example ${accepted ? "accepted" : "rejected"} and saved successfully!`);
+        const statusMessages = {
+          "accepted": "accepted",
+          "rejected": "rejected", 
+          "needs_edit": "marked for editing"
+        };
+        setSaveMessage(`Example ${statusMessages[status]} and saved successfully!`);
       } else {
         const errorData = await response.json();
         setSaveStatus("error");
@@ -151,9 +157,14 @@ function CodeEditor() {
               });
 
               const { prediction, prompt } = await res.json();
+
+              // Remove special tokens <|editable_region_start|>, <|user_cursor_is_here|>, <|editable_region_end|> and any trailing newlines
+              const code = prediction.replace(/<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g, '');
+
+              setLastCode(code);
               setLastPrediction(prediction);
               setLastPrompt(prompt);
-              return prediction;
+              return code;
             },
             500,
             acceptOnClick,
@@ -186,16 +197,22 @@ function CodeEditor() {
           </pre>
           <div className="mt-4 flex gap-2">
             <button
-              onClick={() => saveExample(true)}
+              onClick={() => saveExample("accepted")}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded border border-green-500"
             >
               ✓ Good Example
             </button>
             <button
-              onClick={() => saveExample(false)}
+              onClick={() => saveExample("rejected")}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded border border-red-500"
             >
               ✗ Bad Example
+            </button>
+            <button
+              onClick={() => saveExample("needs_edit")}
+              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded border border-orange-500"
+            >
+              ✏️ Edit Me
             </button>
           </div>
           {saveMessage && (
