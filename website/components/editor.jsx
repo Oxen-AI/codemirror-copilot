@@ -38,7 +38,6 @@ df = pd.read_
 // # save to csv`;
 
 function CodeEditor() {
-  const [model, setModel] = useState("baseten:dgonz-flexible-coffee-harrier");
   const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
   const [lastCode, setLastCode] = useState(DEFAULTCODE);
@@ -93,34 +92,6 @@ function CodeEditor() {
   
   return (
     <>
-      <Select
-        value={model}
-        onValueChange={(value) => {
-          setModel(value);
-          clearLocalCache();
-        }}
-      >
-        <SelectTrigger className="w-[280px]">
-          <SelectValue placeholder="Model" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="baseten:dgonz-flexible-coffee-harrier">
-            Fine-Tuned Llama 3.2-1B-Instruct
-          </SelectItem>
-          <SelectItem value="gpt-3.5-turbo-1106">
-            GPT 3.5 Turbo <Badge variant="secondary">recommended</Badge>
-          </SelectItem>
-          <SelectItem value="codellama-34b-instruct">
-            Code Llama 34B Instruct <Badge variant="secondary">great</Badge>
-          </SelectItem>
-          <SelectItem value="codellama-70b-instruct">
-            Code Llama 70B Instruct <Badge variant="secondary">buggy</Badge>
-          </SelectItem>
-          <SelectItem value="gpt-4-1106-preview">
-            GPT-4 Turbo <Badge variant="destructive">expensive</Badge>
-          </SelectItem>
-        </SelectContent>
-      </Select>
       <CodeMirror
         style={{
           fontSize: "17px",
@@ -150,9 +121,8 @@ function CodeEditor() {
                   prefix,
                   suffix,
                   language: "python",
-                  model,
-                  lastPrediction: lastPrediction,
-                  lastPatch: patch,
+                  model: "oxen:ox-faithful-moccasin-horse",
+                  lastEdit: prefix+suffix,
                 }),
               });
 

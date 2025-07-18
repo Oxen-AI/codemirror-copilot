@@ -5,13 +5,17 @@ const openai = new OpenAI({
   baseURL: "https://hub.oxen.ai/api",
 });
 
-async function completionOpenAI(prefix, suffix, lastPrediction, model="baseten:dgonz-flexible-coffee-harrier", language, lastPatch) {
-  let prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
+function addSpaceToNewlines(str) {
+  return str.replace(/^/gm, ' ');
+}
+
+async function completionOpenAI(prefix, suffix, lastEdit, model) {
+  let prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location. You will be given the last state of the code and the cursor location as <|user_cursor_is_here|>. Predict what the user's next edit will be, given the existing code and the current cursor location.
+
+Respond with just the modified code that compiles and runs and nothing else.
 
 Last Edit:
-${lastPatch ? `${lastPatch.contextBefore ? lastPatch.contextBefore.map(line => `   ${line}`).join('\n') + '\n' : ''}   ${lastPatch.original}
-   ${lastPatch.modified}
-${lastPatch.contextAfter ? '\n' + lastPatch.contextAfter.map(line => `   ${line}`).join('\n') : ''}` : ''}
+${addSpaceToNewlines(lastEdit)}
 
 Context:
 <|editable_region_start|>
@@ -43,13 +47,11 @@ ${prefix}<|user_cursor_is_here|>${suffix}
 }
 
 export default async function handler(req, res) {
-  const { prefix, suffix, lastPrediction, model, language, lastPatch } = req.body;
+  const { prefix, suffix, lastEdit, model } = req.body;
   console.log("prefix", prefix)
   console.log("suffix", suffix)
   console.log("model", model)
-  console.log("language", language)
-  console.log("lastPrediction", lastPrediction)
-  console.log("lastPatch", lastPatch)
-  const { prediction, prompt } = await completionOpenAI(prefix, suffix, lastPrediction, model, language, lastPatch);
+  console.log("lastEdit", lastEdit)
+  const { prediction, prompt } = await completionOpenAI(prefix, suffix, lastEdit, model);
   res.status(200).json({ prediction, prompt })
 }
