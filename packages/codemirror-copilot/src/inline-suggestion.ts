@@ -311,23 +311,29 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   // Remove the suffix from newAfterCursor to get only the new content that should be shown as ghost text
   let ghostText = newAfterCursor;
   if (suggestion.suffix && suggestion.suffix.length > 0) {
-    // The key insight: we want to show only the diff between oldAfterCursor and newAfterCursor
-    // that represents net-new content, not content that will replace existing suffix content
+    // The suffix represents content that already exists in the document after the cursor
+    // We need to remove any part of this suffix that appears in the ghost text
     
-    // Find the longest common suffix between newAfterCursor and the actual suffix
-    let commonSuffixLength = 0;
-    const minLength = Math.min(ghostText.length, suggestion.suffix.length);
+    // Try different strategies to remove suffix content
     
-    for (let i = 1; i <= minLength; i++) {
-      const ghostEnd = ghostText.slice(-i);
-      const suffixEnd = suggestion.suffix.slice(-i);
-      if (ghostEnd === suffixEnd) {
-        commonSuffixLength = i;
-      }
+    // Strategy 1: Exact prefix removal
+    if (ghostText.startsWith(suggestion.suffix)) {
+      ghostText = ghostText.slice(suggestion.suffix.length);
+    } 
+    // Strategy 2: Exact suffix removal  
+    else if (ghostText.endsWith(suggestion.suffix)) {
+      ghostText = ghostText.slice(0, ghostText.length - suggestion.suffix.length);
     }
-    
-    if (commonSuffixLength > 0) {
-      ghostText = ghostText.slice(0, ghostText.length - commonSuffixLength);
+    // Strategy 3: Find any occurrence of suffix content and remove from there
+    else {
+      const suffixTrimmed = suggestion.suffix.trim();
+      if (suffixTrimmed.length > 0) {
+        const suffixIndex = ghostText.indexOf(suffixTrimmed);
+        if (suffixIndex !== -1) {
+          // Remove everything from the suffix occurrence onwards, but also trim any trailing whitespace
+          ghostText = ghostText.slice(0, suffixIndex).trimEnd();
+        }
+      }
     }
   }
   

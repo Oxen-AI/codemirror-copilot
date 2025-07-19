@@ -28,9 +28,16 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
 
 const DEFAULTCODE = `import pandas as pd
 file_path = "data.csv"
-df = pd.read_csv(file_path)
+df = pd
 
-# Iterate over the rows`;
+# Iterate over `;
+
+// const DEFAULTCODE = `import pandas as pd
+// # read the parquet file
+// file_path = "data.parquet"
+// df = pd.read
+
+// # Iterate over the rows`;
 
 // const DEFAULTCODE = `import pandas as pd
 // file_path = "data.parquet"
@@ -100,7 +107,7 @@ function CodeEditor() {
           marginTop: "1rem",
         }}
         value={DEFAULTCODE}
-        height="300px"
+        height="500px"
         width="100%"
         basicSetup={{
           autocompletion: false,
@@ -111,7 +118,7 @@ function CodeEditor() {
           python(),
           indentUnit.of("    "),
           inlineCopilot(
-            "oxen:ox-balanced-lavender-mackerel",
+            "oxen:ox-live-apricot-bovid",
             "/api/autocomplete",
             (prediction, prompt) => {
               setLastPrediction(prediction);
