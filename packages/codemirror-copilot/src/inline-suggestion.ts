@@ -298,12 +298,12 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
 
   const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText, view.state.doc.length);
   
-  console.log("=====change ranges======")
-  for (const range of changeRanges) {
-    // print range.from and range.to and range.text in a single line
-    console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
-  }
-  console.log("=====end change ranges======")
+  // console.log("=====change ranges======")
+  // for (const range of changeRanges) {
+  //   // print range.from and range.to and range.text in a single line
+  //   console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
+  // }
+  // console.log("=====end change ranges======")
 
   const decorations = [];
   // const docLength = view.state.doc.length;
@@ -315,12 +315,12 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     const from = range.from; // Math.max(0, Math.min(range.from, docLength));
     const to = range.to; // Math.max(from, Math.min(range.to, docLength));
     
-    console.log(`Processing range: from=${from}, to=${to}, text="${range.text}"`);
+    // console.log(`Processing range: from=${from}, to=${to}, text="${range.text}"`);
     
     if (from < to) {
       // Track the end of the last range for placing the accept indicator
       lastRangeEnd = Math.max(lastRangeEnd, to);
-      console.log(`Updated lastRangeEnd to: ${lastRangeEnd}`);
+      // console.log(`Updated lastRangeEnd to: ${lastRangeEnd}`);
       
       // Add ghost text decoration
       const ghostWidget = Decoration.replace({
@@ -332,18 +332,18 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     }
   }
 
-  console.log("=====lastRangeEnd======")
-  console.log(lastRangeEnd)
-  console.log("=====end lastRangeEnd======")
+  // console.log("=====lastRangeEnd======")
+  // console.log(lastRangeEnd)
+  // console.log("=====end lastRangeEnd======")
 
   // Add accept/reject button at the end of the last range
-  console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
+  // console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
   
   // Place the widget after the last ghost text range
   let widgetPosition = lastRangeEnd;
   if (lastRangeEnd > 0) {
     widgetPosition = lastRangeEnd;
-    console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
+    // console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
     const acceptWidget = Decoration.widget({
       widget: new AcceptIndicatorWidget(suggestion),
       side: 1  // 1 means after the position
@@ -358,10 +358,10 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     return aFrom - bFrom;
   });
   
-  console.log("Final sorted decorations:");
-  for (const decoration of decorations) {
-    console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
-  }
+  // console.log("Final sorted decorations:");
+  // for (const decoration of decorations) {
+  //   console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
+  // }
   
   return Decoration.set(decorations);
 }

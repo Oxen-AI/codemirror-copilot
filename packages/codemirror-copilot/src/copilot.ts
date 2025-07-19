@@ -1,165 +1,112 @@
 import { inlineSuggestion, type DiffSuggestion } from "./inline-suggestion";
 import type { EditorState } from "@codemirror/state";
-// import { Text } from "@codemirror/state";
 
 /**
- * Represents a diff/patch in the format shown in the example
+ * Callback for when a prediction is made
  */
-export interface Patch {
-  /**
-   * The line number where the change occurred (1-indexed)
-   */
-  line: number;
-  /**
-   * The original line content (with - prefix)
-   */
-  original: string;
-  /**
-   * The new line content (with + prefix)
-   */
-  modified: string;
-  /**
-   * Optional context lines before the change
-   */
-  contextBefore?: string[];
-  /**
-   * Optional context lines after the change
-   */
-  contextAfter?: string[];
-  /**
-   * The diff string
-   */
-  diffString?: string;
+export type PredictionCallback = (
+  prediction: string,
+  prompt: string
+) => void;
+
+/**
+ * Internal function to make HTTP request to the autocomplete API
+ */
+async function fetchPrediction(
+  prefix: string,
+  suffix: string,
+  model: string,
+  apiEndpoint: string
+): Promise<{ prediction: string; prompt: string }> {
+  const response = await fetch(apiEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      prefix,
+      suffix,
+      model,
+      lastEdit: prefix + suffix,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return await response.json();
 }
 
 /**
- * Should fetch autosuggestions from your AI
- * of choice. If there are no suggestions,
- * you should return an empty string.
- * The patch parameter contains information about the last edit.
+ * Wraps the internal fetch method to work with the inline suggestion system
  */
-export type SuggestionRequestCallback = (
-  prefix: string,
-  suffix: string,
-  patch?: Patch,
-) => Promise<string>;
-
-const localSuggestionsCache: { [key: string]: DiffSuggestion } = {};
-
-// Track the last prediction for diff calculation
-let lastPrediction: string | null = null;
-
-/**
- * Wraps a user-provided fetch method so that users
- * don't have to interact directly with the EditorState
- * object, and connects it to the local result cache.
- */
-function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
+function wrapInternalFetcher(
+  model: string,
+  apiEndpoint: string,  
+  onPrediction?: PredictionCallback
+) {
   return async function fetchSuggestion(state: EditorState) {
     const { from, to } = state.selection.ranges[0];
     const text = state.doc.toString();
     const prefix = text.slice(0, to);
     const suffix = text.slice(from);
 
-    // If we have a local suggestion cache, use it
-    const key = `${prefix}<:|:>${suffix}`;
-    const localSuggestion = localSuggestionsCache[key];
-    if (localSuggestion) {
-      return localSuggestion;
+    try {
+      const { prediction, prompt } = await fetchPrediction(
+        prefix,
+        suffix,
+        model,
+        apiEndpoint
+      );
+
+      // Call the prediction callback if provided
+      if (onPrediction) {
+        onPrediction(prediction, prompt);
+      }
+
+      // Remove special tokens and clean up the prediction
+      const cleanPrediction = prediction.replace(
+        /<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g,
+        ''
+      );
+
+      // Create a diff suggestion
+      const diffSuggestion: DiffSuggestion = {
+        oldText: text,
+        newText: cleanPrediction.trim(),
+        from: from,
+        to: to,
+      };
+
+      return diffSuggestion;
+    } catch (error) {
+      console.error("Error fetching prediction:", error);
+      // Return empty suggestion on error
+      return {
+        oldText: text,
+        newText: text,
+        from: from,
+        to: to,
+      };
     }
-
-    // Calculate diff from last prediction if available
-    let patch: Patch | undefined;
-    if (lastPrediction) {
-      patch = calculateDetailedPatch(lastPrediction, text);
-    }
-
-    console.log("=====patch======")
-    console.log(patch)
-    console.log("=====end patch======")
-
-    const prediction = await onSuggestionRequest(prefix, suffix, patch);
-    
-    // Store the current prediction for next diff calculation
-    lastPrediction = prediction.trim();
-    
-    // Create a diff suggestion
-    const diffSuggestion: DiffSuggestion = {
-      oldText: text,
-      newText: prediction.trim(), // Ensure clean text without extra newlines
-      from: from,
-      to: to,
-    };
-    
-    localSuggestionsCache[key] = diffSuggestion;
-    return diffSuggestion;
-  };
-}
-
-/**
- * Calculate a detailed patch with line numbers and context
- */
-function calculateDetailedPatch(lastPrediction: string, currentText: string): Patch | undefined {
-  const lastLines = lastPrediction.split('\n');
-  const currentLines = currentText.split('\n');
-  
-  // Find the first line that differs
-  let firstDiffLine = -1;
-  const maxLines = Math.max(lastLines.length, currentLines.length);
-  
-  for (let i = 0; i < maxLines; i++) {
-    const lastLine = lastLines[i] || '';
-    const currentLine = currentLines[i] || '';
-    
-    if (lastLine !== currentLine) {
-      firstDiffLine = i + 1; // 1-indexed line number
-      break;
-    }
-  }
-  
-  if (firstDiffLine === -1) {
-    return undefined; // No differences found
-  }
-  
-  // Get context lines (2 lines before and after)
-  const contextBefore = lastLines.slice(Math.max(0, firstDiffLine - 3), firstDiffLine - 1);
-  const contextAfter = lastLines.slice(firstDiffLine, Math.min(lastLines.length, firstDiffLine + 2));
-  
-  // Get the original and modified lines
-  const originalLine = lastLines[firstDiffLine - 1] || '';
-  const modifiedLine = currentLines[firstDiffLine - 1] || '';
-  
-  return {
-    line: firstDiffLine,
-    original: `- ${originalLine}`,
-    modified: `+ ${modifiedLine}`,
-    contextBefore: contextBefore.length > 0 ? contextBefore : undefined,
-    contextAfter: contextAfter.length > 0 ? contextAfter : undefined,
-    diffString: `- ${originalLine}\n+ ${modifiedLine}`
   };
 }
 
 /**
  * Configure the UI, state, and keymap to power
- * auto suggestions, with an abstracted
- * fetch method.
+ * auto suggestions with a simplified API that only requires
+ * the model name and API endpoint.
  */
 export const inlineCopilot = (
-  onSuggestionRequest: SuggestionRequestCallback,
-  delay = 1000,
-  acceptOnClick = true,
+  model: string,
+  apiEndpoint: string = "/api/autocomplete",
+  onPrediction?: PredictionCallback,
+  delay: number = 500
 ) => {
   return inlineSuggestion({
-    fetchFn: wrapUserFetcher(onSuggestionRequest),
+    fetchFn: wrapInternalFetcher(model, apiEndpoint, onPrediction),
     delay,
-    acceptOnClick,
   });
 };
 
-export const clearLocalCache = () => {
-  Object.keys(localSuggestionsCache).forEach((key) => {
-    delete localSuggestionsCache[key];
-  });
-  // Also clear the tracking variable
-  lastPrediction = null;
-};

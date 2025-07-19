@@ -27,9 +27,10 @@ const CodeMirror = dynamic(() => import("@uiw/react-codemirror"), {
 //   return`;
 
 const DEFAULTCODE = `import pandas as pd
-file_path = "data.parq"
-df = pd.read_
-`;
+file_path = "data.csv"
+df = pd.read_csv(file_path)
+
+# Iterate over the rows`;
 
 // const DEFAULTCODE = `import pandas as pd
 // file_path = "data.parquet"
@@ -38,9 +39,7 @@ df = pd.read_
 // # save to csv`;
 
 function CodeEditor() {
-  const [acceptOnClick, setAcceptOnClick] = useState(true);
   const [lastPrediction, setLastPrediction] = useState(DEFAULTCODE);
-  const [lastCode, setLastCode] = useState(DEFAULTCODE);
   const [lastPrompt, setLastPrompt] = useState("");
   const [saveMessage, setSaveMessage] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
@@ -111,50 +110,15 @@ function CodeEditor() {
         extensions={[
           python(),
           inlineCopilot(
-            async (prefix, suffix, patch) => {
-              const res = await fetch("/api/autocomplete", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  prefix,
-                  suffix,
-                  language: "python",
-                  model: "oxen:ox-faithful-moccasin-horse",
-                  lastEdit: prefix+suffix,
-                }),
-              });
-
-              const { prediction, prompt } = await res.json();
-
-              // Remove special tokens <|editable_region_start|>, <|user_cursor_is_here|>, <|editable_region_end|> and any trailing newlines
-              const code = prediction.replace(/<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g, '');
-
-              setLastCode(code);
+            "oxen:ox-balanced-lavender-mackerel",
+            "/api/autocomplete",
+            (prediction, prompt) => {
               setLastPrediction(prediction);
               setLastPrompt(prompt);
-              return code;
-            },
-            500,
-            acceptOnClick,
+            }
           ),
         ]}
       />
-      <div className="pt-2">
-        <label className="flex items-center gap-2">
-          <input
-            checked={acceptOnClick}
-            onChange={(e) => {
-              setAcceptOnClick(e.target.checked);
-            }}
-            type="checkbox"
-            name="click"
-          />
-          Clickable suggestions
-        </label>
-      </div>
-      
       {lastPrompt && (
         <div className="mt-4 pt-4 p-3 bg-gray-800 rounded border border-gray-700">
           <h3 className="text-sm font-semibold text-gray-300 mb-2">Last Prompt:</h3>
