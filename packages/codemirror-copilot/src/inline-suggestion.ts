@@ -308,10 +308,27 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   const oldAfterCursor = suggestion.oldText.slice(cursorPos);
   const newAfterCursor = suggestion.newText.slice(cursorPos);
   
-  // Remove the suffix from newAfterCursor to get only the new content
+  // Remove the suffix from newAfterCursor to get only the new content that should be shown as ghost text
   let ghostText = newAfterCursor;
-  if (suggestion.suffix && newAfterCursor.endsWith(suggestion.suffix)) {
-    ghostText = newAfterCursor.slice(0, newAfterCursor.length - suggestion.suffix.length);
+  if (suggestion.suffix && suggestion.suffix.length > 0) {
+    // The key insight: we want to show only the diff between oldAfterCursor and newAfterCursor
+    // that represents net-new content, not content that will replace existing suffix content
+    
+    // Find the longest common suffix between newAfterCursor and the actual suffix
+    let commonSuffixLength = 0;
+    const minLength = Math.min(ghostText.length, suggestion.suffix.length);
+    
+    for (let i = 1; i <= minLength; i++) {
+      const ghostEnd = ghostText.slice(-i);
+      const suffixEnd = suggestion.suffix.slice(-i);
+      if (ghostEnd === suffixEnd) {
+        commonSuffixLength = i;
+      }
+    }
+    
+    if (commonSuffixLength > 0) {
+      ghostText = ghostText.slice(0, ghostText.length - commonSuffixLength);
+    }
   }
   
   console.log("=====cursor analysis======")
