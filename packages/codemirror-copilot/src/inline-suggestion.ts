@@ -35,6 +35,7 @@ export interface DiffSuggestion {
   suffix: string;
   from: number;
   to: number;
+  ghostText?: string; // The actual text shown as ghost text to the user
 }
 
 /**
@@ -181,6 +182,7 @@ class GhostTextWidget extends WidgetType {
       ...insertDiffText(
         view.state,
         suggestion.newText,
+        suggestion,
       ),
     });
     return true;
@@ -263,6 +265,7 @@ class AcceptIndicatorWidget extends WidgetType {
       ...insertDiffText(
         view.state,
         suggestion.newText,
+        suggestion,
       ),
     });
     return true;
@@ -324,6 +327,9 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   // Only show ghost text if there's new content after filtering out the suffix
   // Also skip if the content is the same when whitespace is stripped
   if (ghostText.length > 0 && ghostText !== oldAfterCursor && ghostText.trim() !== oldAfterCursor.trim()) {
+    // Store the ghost text in the suggestion for use when accepting
+    suggestion.ghostText = ghostText;
+    
     // The cursor is at the end of the prefix, which maps to suggestion.to in the document
     // since the prefix represents the content that's already been typed
     const ghostStartPos = suggestion.to;
@@ -472,6 +478,7 @@ const inlineSuggestionKeymap = Prec.highest(
           ...insertDiffText(
             view.state,
             suggestion.newText,
+            suggestion,
           ),
         });
         return true;
@@ -499,15 +506,36 @@ const inlineSuggestionKeymap = Prec.highest(
 
 function insertDiffText(
   state: EditorState,
-  text: string,
+  newText: string,
+  suggestion?: DiffSuggestion,
 ): TransactionSpec {
-  // Replace the entire document, ensuring no extra newlines
-  const cleanText = text.trim();
-  return {
-    changes: { from: 0, to: state.doc.length, insert: cleanText },
-    selection: EditorSelection.cursor(cleanText.length),
-    userEvent: "input.complete",
-  };
+  if (suggestion && suggestion.ghostText) {
+    // For inline suggestions, insert only the ghost text that was shown to the user
+    // at the cursor position (suggestion.to)
+    const insertText = suggestion.ghostText;
+    const cursorPosition = suggestion.to + insertText.length;
+    
+    return {
+      changes: { from: suggestion.to, to: suggestion.to, insert: insertText },
+      selection: EditorSelection.cursor(cursorPosition),
+      userEvent: "input.complete",
+    };
+  } else if (suggestion) {
+    // Fallback for suggestions without ghostText
+    return {
+      changes: { from: suggestion.from, to: suggestion.to, insert: newText },
+      selection: EditorSelection.cursor(suggestion.to + newText.length),
+      userEvent: "input.complete",
+    };
+  } else {
+    // Fallback to original behavior for backward compatibility
+    const cleanText = newText.trim();
+    return {
+      changes: { from: 0, to: state.doc.length, insert: cleanText },
+      selection: EditorSelection.cursor(cleanText.length),
+      userEvent: "input.complete",
+    };
+  }
 }
 
 /**
