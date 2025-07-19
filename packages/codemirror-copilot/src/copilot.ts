@@ -77,6 +77,8 @@ function wrapInternalFetcher(
         newText: cleanPrediction.trim(),
         from: from,
         to: to,
+        prefix: prefix,
+        suffix: suffix,
       };
 
       return diffSuggestion;
@@ -88,6 +90,8 @@ function wrapInternalFetcher(
         newText: text,
         from: from,
         to: to,
+        prefix: prefix,
+        suffix: suffix,
       };
     }
   };

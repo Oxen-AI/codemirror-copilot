@@ -31,6 +31,8 @@ type InlineFetchFn = (state: EditorState) => Promise<DiffSuggestion>;
 export interface DiffSuggestion {
   oldText: string;
   newText: string;
+  prefix: string;
+  suffix: string;
   from: number;
   to: number;
 }
@@ -69,7 +71,7 @@ const InlineSuggestionEffect = StateEffect.define<{
 
 /**
  * Calculate the specific ranges where changes occur between old and new text
- */
+ 
 function calculateChangeRanges(oldText: string, newText: string): Array<{ from: number; to: number; text: string }> {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
@@ -129,6 +131,7 @@ function calculateChangeRanges(oldText: string, newText: string): Array<{ from: 
   
   return ranges;
 }
+*/
 
 /**
  * Widget for displaying ghost text inline
@@ -282,77 +285,64 @@ class AcceptIndicatorWidget extends WidgetType {
  * this creates multiple decoration widgets for the ranges
  * where changes occur in the document.
  */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView) {
+function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   console.log("=====suggestion oldText======")
   console.log(suggestion.oldText)
   console.log("=====end suggestion oldText======")
   console.log("=====suggestion newText======")
   console.log(suggestion.newText)
-  console.log("=====end suggestion newText======\n\n")
+  console.log("=====end suggestion newText======")
+  console.log("=====prefix======")
+  console.log(suggestion.prefix)
+  console.log("=====suffix======")
+  console.log(suggestion.suffix)
+  console.log("=====end prefix/suffix======\n\n")
 
-  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText);
+  // Find the cursor position based on prefix length
+  const cursorPos = suggestion.prefix.length;
   
-  console.log("=====change ranges======")
-  for (const range of changeRanges) {
-    // print range.from and range.to and range.text in a single line
-    console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
-  }
-  console.log("=====end change ranges======")
+  // Calculate what text should appear after the cursor
+  const oldAfterCursor = suggestion.oldText.slice(cursorPos);
+  const newAfterCursor = suggestion.newText.slice(cursorPos);
+  
+  console.log("=====cursor analysis======")
+  console.log(`cursorPos: ${cursorPos}`)
+  console.log(`oldAfterCursor: "${oldAfterCursor}"`)
+  console.log(`newAfterCursor: "${newAfterCursor}"`)
+  console.log("=====end cursor analysis======")
 
   const decorations = [];
-  // const docLength = view.state.doc.length;
-  let lastRangeEnd = 0;
-
-  // Create all decorations and sort them by position
-  for (const range of changeRanges) {
-    // Validate that the range is within document bounds
-    const from = range.from; // Math.max(0, Math.min(range.from, docLength));
-    const to = range.to; // Math.max(from, Math.min(range.to, docLength));
-    
-    console.log(`Processing range: from=${from}, to=${to}\ntext="${range.text}"`);
-    
-    if (from < to) {
-      // Track the end of the last range for placing the accept indicator
-      lastRangeEnd = Math.max(lastRangeEnd, to);
-      // console.log(`Updated lastRangeEnd to: ${lastRangeEnd}`);
-      
-      // Add ghost text decoration
-      const ghostWidget = Decoration.replace({
-        widget: new GhostTextWidget(range.text, suggestion),
-        inclusiveStart: true,
-        inclusiveEnd: true
-      });
-      decorations.push(ghostWidget.range(from, to));
-    }
-  }
-
-  console.log("=====lastRangeEnd======")
-  console.log(lastRangeEnd)
-  console.log("=====end lastRangeEnd======")
-
-  // Add accept/reject button at the end of the last range
-  // console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
   
-  // Place the widget after the last ghost text range
-  let widgetPosition = lastRangeEnd;
-  if (lastRangeEnd > 0) {
-    widgetPosition = lastRangeEnd;
-    console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
+  // Only show ghost text if there's new content after the cursor that differs from old content
+  if (newAfterCursor !== oldAfterCursor && newAfterCursor.length > 0) {
+    // The cursor is at the end of the prefix, which maps to suggestion.to in the document
+    // since the prefix represents the content that's already been typed
+    const ghostStartPos = suggestion.to;
+    
+    // For new content after cursor, we use a widget decoration (insertion, not replacement)
+    // since we're adding new content beyond the existing text
+    console.log(`Ghost text positioning: start=${ghostStartPos}`);
+    console.log(`Ghost text content: "${newAfterCursor}"`);
+    console.log(`Suggestion range: ${suggestion.from} to ${suggestion.to}`);
+    
+    // Create ghost text decoration as a widget (insertion) at the cursor position
+    const ghostWidget = Decoration.widget({
+      widget: new GhostTextWidget(newAfterCursor, suggestion),
+      side: 1  // 1 means after the position
+    });
+    decorations.push(ghostWidget.range(ghostStartPos));
+    
+    // Add accept/reject button after the ghost text
     const acceptWidget = Decoration.widget({
       widget: new AcceptIndicatorWidget(suggestion),
       side: 1  // 1 means after the position
     });
-    decorations.push(acceptWidget.range(widgetPosition));
+    decorations.push(acceptWidget.range(ghostStartPos));
+  } else {
+    console.log("No ghost text needed - content after cursor is same or new content is empty");
   }
-
-  // Sort decorations by their from position to ensure they're in order
-  decorations.sort((a, b) => {
-    const aFrom = a.from;
-    const bFrom = b.from;
-    return aFrom - bFrom;
-  });
   
-  console.log("Final sorted decorations:");
+  console.log("Final decorations:");
   for (const decoration of decorations) {
     console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
   }
