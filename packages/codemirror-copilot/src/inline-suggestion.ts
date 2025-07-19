@@ -322,7 +322,8 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   const decorations = [];
   
   // Only show ghost text if there's new content after filtering out the suffix
-  if (ghostText.length > 0 && ghostText !== oldAfterCursor) {
+  // Also skip if the content is the same when whitespace is stripped
+  if (ghostText.length > 0 && ghostText !== oldAfterCursor && ghostText.trim() !== oldAfterCursor.trim()) {
     // The cursor is at the end of the prefix, which maps to suggestion.to in the document
     // since the prefix represents the content that's already been typed
     const ghostStartPos = suggestion.to;
