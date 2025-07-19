@@ -70,7 +70,7 @@ const InlineSuggestionEffect = StateEffect.define<{
 /**
  * Calculate the specific ranges where changes occur between old and new text
  */
-function calculateChangeRanges(oldText: string, newText: string, docLength: number): Array<{ from: number; to: number; text: string }> {
+function calculateChangeRanges(oldText: string, newText: string): Array<{ from: number; to: number; text: string }> {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   
@@ -116,21 +116,15 @@ function calculateChangeRanges(oldText: string, newText: string, docLength: numb
     const additionalLines = newLines.slice(oldLines.length);
     const additionalText = additionalLines.join('\n');
     
-    // If the current position is beyond document length, place at end
-    if (currentPos >= docLength) {
-      ranges.push({
-        from: docLength,
-        to: docLength + additionalText.length,
-        text: additionalText
-      });
-    } else {
-      // Place at current position
-      ranges.push({
-        from: currentPos,
-        to: currentPos + additionalText.length,
-        text: additionalText
-      });
-    }
+    // For additional lines, we should place them at the end of the current document
+    // since the old text represents the current document state
+    const insertPosition = oldText.length;
+    
+    ranges.push({
+      from: insertPosition,
+      to: insertPosition + additionalText.length,
+      text: additionalText
+    });
   }
   
   return ranges;
@@ -296,14 +290,14 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
   console.log(suggestion.newText)
   console.log("=====end suggestion newText======\n\n")
 
-  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText, view.state.doc.length);
+  const changeRanges = calculateChangeRanges(suggestion.oldText, suggestion.newText);
   
-  // console.log("=====change ranges======")
-  // for (const range of changeRanges) {
-  //   // print range.from and range.to and range.text in a single line
-  //   console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
-  // }
-  // console.log("=====end change ranges======")
+  console.log("=====change ranges======")
+  for (const range of changeRanges) {
+    // print range.from and range.to and range.text in a single line
+    console.log(`from: ${range.from}, to: ${range.to}, text: ${range.text}`)
+  }
+  console.log("=====end change ranges======")
 
   const decorations = [];
   // const docLength = view.state.doc.length;
@@ -315,7 +309,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     const from = range.from; // Math.max(0, Math.min(range.from, docLength));
     const to = range.to; // Math.max(from, Math.min(range.to, docLength));
     
-    // console.log(`Processing range: from=${from}, to=${to}, text="${range.text}"`);
+    console.log(`Processing range: from=${from}, to=${to}\ntext="${range.text}"`);
     
     if (from < to) {
       // Track the end of the last range for placing the accept indicator
@@ -325,16 +319,16 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
       // Add ghost text decoration
       const ghostWidget = Decoration.replace({
         widget: new GhostTextWidget(range.text, suggestion),
-        inclusiveStart: false,
-        inclusiveEnd: false
+        inclusiveStart: true,
+        inclusiveEnd: true
       });
       decorations.push(ghostWidget.range(from, to));
     }
   }
 
-  // console.log("=====lastRangeEnd======")
-  // console.log(lastRangeEnd)
-  // console.log("=====end lastRangeEnd======")
+  console.log("=====lastRangeEnd======")
+  console.log(lastRangeEnd)
+  console.log("=====end lastRangeEnd======")
 
   // Add accept/reject button at the end of the last range
   // console.log(`Adding AcceptIndicatorWidget at position: ${lastRangeEnd}`);
@@ -343,7 +337,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
   let widgetPosition = lastRangeEnd;
   if (lastRangeEnd > 0) {
     widgetPosition = lastRangeEnd;
-    // console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
+    console.log(`Final widget position: ${widgetPosition} (doc length: ${view.state.doc.length})`);
     const acceptWidget = Decoration.widget({
       widget: new AcceptIndicatorWidget(suggestion),
       side: 1  // 1 means after the position
@@ -358,10 +352,10 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, view: EditorView
     return aFrom - bFrom;
   });
   
-  // console.log("Final sorted decorations:");
-  // for (const decoration of decorations) {
-  //   console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
-  // }
+  console.log("Final sorted decorations:");
+  for (const decoration of decorations) {
+    console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
+  }
   
   return Decoration.set(decorations);
 }
