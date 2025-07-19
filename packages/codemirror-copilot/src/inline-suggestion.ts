@@ -305,16 +305,24 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   const oldAfterCursor = suggestion.oldText.slice(cursorPos);
   const newAfterCursor = suggestion.newText.slice(cursorPos);
   
+  // Remove the suffix from newAfterCursor to get only the new content
+  let ghostText = newAfterCursor;
+  if (suggestion.suffix && newAfterCursor.endsWith(suggestion.suffix)) {
+    ghostText = newAfterCursor.slice(0, newAfterCursor.length - suggestion.suffix.length);
+  }
+  
   console.log("=====cursor analysis======")
   console.log(`cursorPos: ${cursorPos}`)
   console.log(`oldAfterCursor: "${oldAfterCursor}"`)
   console.log(`newAfterCursor: "${newAfterCursor}"`)
+  console.log(`suffix: "${suggestion.suffix}"`)
+  console.log(`ghostText (filtered): "${ghostText}"`)
   console.log("=====end cursor analysis======")
 
   const decorations = [];
   
-  // Only show ghost text if there's new content after the cursor that differs from old content
-  if (newAfterCursor !== oldAfterCursor && newAfterCursor.length > 0) {
+  // Only show ghost text if there's new content after filtering out the suffix
+  if (ghostText.length > 0 && ghostText !== oldAfterCursor) {
     // The cursor is at the end of the prefix, which maps to suggestion.to in the document
     // since the prefix represents the content that's already been typed
     const ghostStartPos = suggestion.to;
@@ -322,12 +330,12 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
     // For new content after cursor, we use a widget decoration (insertion, not replacement)
     // since we're adding new content beyond the existing text
     console.log(`Ghost text positioning: start=${ghostStartPos}`);
-    console.log(`Ghost text content: "${newAfterCursor}"`);
+    console.log(`Ghost text content: "${ghostText}"`);
     console.log(`Suggestion range: ${suggestion.from} to ${suggestion.to}`);
     
     // Create ghost text decoration as a widget (insertion) at the cursor position
     const ghostWidget = Decoration.widget({
-      widget: new GhostTextWidget(newAfterCursor, suggestion),
+      widget: new GhostTextWidget(ghostText, suggestion),
       side: 1  // 1 means after the position
     });
     decorations.push(ghostWidget.range(ghostStartPos));
@@ -339,7 +347,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
     });
     decorations.push(acceptWidget.range(ghostStartPos));
   } else {
-    console.log("No ghost text needed - content after cursor is same or new content is empty");
+    console.log("No ghost text needed - filtered content is empty or same as existing");
   }
   
   console.log("Final decorations:");
