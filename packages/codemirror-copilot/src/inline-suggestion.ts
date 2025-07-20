@@ -74,33 +74,70 @@ const InlineSuggestionEffect = StateEffect.define<{
 }>();
 
 /**
- * Widget for displaying ghost text inline
+ * Represents a piece of diff text with type information
+ */
+interface DiffPart {
+  text: string;
+  type: 'added' | 'removed' | 'unchanged';
+}
+
+/**
+ * Widget for displaying ghost text inline with diff information
  */
 class GhostTextWidget extends WidgetType {
-  text: string;
+  diffParts: DiffPart[];
   suggestion: DiffSuggestion;
 
-  constructor(text: string, suggestion: DiffSuggestion) {
+  constructor(diffParts: DiffPart[], suggestion: DiffSuggestion) {
     super();
-    this.text = text;
+    this.diffParts = diffParts;
     this.suggestion = suggestion;
   }
 
   toDOM(view: EditorView) {
-    const span = document.createElement("span");
-    span.className = "cm-ghost-text";
-    span.style.cssText = `
-      color: #007acc;
-      opacity: 0.6;
-      font-style: italic;
-      background: rgba(0, 122, 204, 0.1);
-      border-radius: 2px;
-      padding: 1px 2px;
+    const container = document.createElement("span");
+    container.className = "cm-ghost-text-container";
+    container.style.cssText = `
       cursor: pointer;
+      display: inline;
     `;
-    span.textContent = this.text;
-    span.onclick = (e) => this.accept(e, view);
-    return span;
+    
+    // Create spans for each diff part
+    this.diffParts.forEach((part) => {
+      if (part.type === 'unchanged') return; // Skip unchanged parts
+      
+      const span = document.createElement("span");
+      span.className = `cm-ghost-text cm-ghost-${part.type}`;
+      
+      if (part.type === 'added') {
+        span.style.cssText = `
+          color: #22863a;
+          opacity: 0.7;
+          font-style: italic;
+          background: rgba(34, 134, 58, 0.1);
+          border-radius: 2px;
+          padding: 1px 2px;
+          margin-right: 1px;
+        `;
+      } else if (part.type === 'removed') {
+        span.style.cssText = `
+          color: #d73a49;
+          opacity: 0.7;
+          font-style: italic;
+          background: rgba(215, 58, 73, 0.1);
+          border-radius: 2px;
+          padding: 1px 2px;
+          margin-right: 1px;
+          text-decoration: line-through;
+        `;
+      }
+      
+      span.textContent = part.text;
+      container.appendChild(span);
+    });
+    
+    container.onclick = (e) => this.accept(e, view);
+    return container;
   }
 
   accept(e: MouseEvent, view: EditorView) {
@@ -223,8 +260,14 @@ class AcceptIndicatorWidget extends WidgetType {
  * where changes occur in the document.
  */
 function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
+  console.log("====oldText====");
+  console.log(suggestion.oldText);
+  console.log("====end oldText====");
+  console.log("====newText====");
+  console.log(suggestion.newText);
+  console.log("====end newText====");
+
   const cursorMarker = "<|user_cursor_is_here|>";
-  const cursorMarkerWithNewline = "<|user_cursor_is_here|>\n";
 
   if (!suggestion.newText.includes(cursorMarker)) {
     console.log("No cursor marker found, skipping ghost text");
@@ -232,8 +275,8 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   }
 
   // Remove cursor marker from both texts to compute the actual diff
-  const oldTextClean = suggestion.oldText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "");
-  const newTextClean = suggestion.newText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "");
+  const oldTextClean = suggestion.oldText.replace(cursorMarker, "");
+  const newTextClean = suggestion.newText.replace(cursorMarker, "");
   console.log("====oldTextClean====");
   console.log(oldTextClean);
   console.log("====end oldTextClean====");
@@ -244,24 +287,50 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   // Use diff library to compute precise changes
   const diffs = Diff.diffChars(oldTextClean, newTextClean);
   console.log(`====diffs (${diffs.length})====`);
-  // Extract only the added parts as ghost text
+  
+  // Find cursor positions in both old and new text
+  const oldCursorPosition = suggestion.oldText.indexOf(cursorMarker);
+  const newCursorPosition = suggestion.newText.indexOf(cursorMarker);
+  
+  console.log(`Old cursor position: ${oldCursorPosition}, New cursor position: ${newCursorPosition}`);
+  
+  // Track positions in both old and new text as we process diffs
+  let diffTextPos = 0;
+
+  // Extract diff parts for ghost text rendering - only changes at cursor position
+  const diffParts: DiffPart[] = [];
   let ghostText = "";
+  
   for (const part of diffs) {
+    console.log("oldCursorPosition", oldCursorPosition, "newCursorPosition", newCursorPosition);
+    console.log("diffTextPos", diffTextPos);
     console.log("part", part);
-    if (part.added) {
+    
+    if (diffTextPos >= oldCursorPosition && (diffTextPos + part.value.length) <= newCursorPosition) {
+      if (part.added) {
+        diffParts.push({ text: part.value, type: 'added' });
+      }
+      if (part.removed) {
+        diffParts.push({ text: part.value, type: 'removed' });
+      }
+      if (!part.added && !part.removed) {
+        diffParts.push({ text: part.value, type: 'unchanged' });
+      }
+      diffTextPos += part.count;
       ghostText += part.value;
     }
   }
   console.log("====end diffs====");
 
   console.log(`Computed ghost text using diff: "${ghostText}"`);
+  console.log(`Diff parts:`, diffParts);
 
   // Store the ghost text in the suggestion for use when accepting
   suggestion.ghostText = ghostText;
 
   // Only show ghost text if there's content to show
-  if (ghostText.length === 0) {
-    console.log("No ghost text needed - content is empty");
+  if (diffParts.length === 0) {
+    console.log("No ghost text needed - no diff parts to show");
     return Decoration.none;
   }
 
@@ -270,7 +339,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
 
   const decorations = [
     Decoration.widget({
-      widget: new GhostTextWidget(ghostText, suggestion),
+      widget: new GhostTextWidget(diffParts, suggestion),
       side: 1, // 1 means after the position
     }).range(ghostStartPos),
 

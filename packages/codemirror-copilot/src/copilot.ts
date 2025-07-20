@@ -49,6 +49,9 @@ function wrapInternalFetcher(
     const prefix = text.slice(0, to);
     const suffix = text.slice(from);
 
+    // Insert a <|user_cursor_is_here|> marker at the cursor position
+    const oldText = text.slice(0, from) + "<|user_cursor_is_here|>" + text.slice(from);
+
     try {
       const { prediction, prompt } = await fetchPrediction(
         prefix,
@@ -70,7 +73,7 @@ function wrapInternalFetcher(
 
       // Create a diff suggestion
       const diffSuggestion: DiffSuggestion = {
-        oldText: text,
+        oldText: oldText,
         newText: cleanPrediction.trim(),
         from: from,
         to: to,
