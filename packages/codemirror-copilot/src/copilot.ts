@@ -4,10 +4,7 @@ import type { EditorState } from "@codemirror/state";
 /**
  * Callback for when a prediction is made
  */
-export type PredictionCallback = (
-  prediction: string,
-  prompt: string
-) => void;
+export type PredictionCallback = (prediction: string, prompt: string) => void;
 
 /**
  * Internal function to make HTTP request to the autocomplete API
@@ -16,7 +13,7 @@ async function fetchPrediction(
   prefix: string,
   suffix: string,
   model: string,
-  apiEndpoint: string
+  apiEndpoint: string,
 ): Promise<{ prediction: string; prompt: string }> {
   const response = await fetch(apiEndpoint, {
     method: "POST",
@@ -43,8 +40,8 @@ async function fetchPrediction(
  */
 function wrapInternalFetcher(
   model: string,
-  apiEndpoint: string,  
-  onPrediction?: PredictionCallback
+  apiEndpoint: string,
+  onPrediction?: PredictionCallback,
 ) {
   return async function fetchSuggestion(state: EditorState) {
     const { from, to } = state.selection.ranges[0];
@@ -57,7 +54,7 @@ function wrapInternalFetcher(
         prefix,
         suffix,
         model,
-        apiEndpoint
+        apiEndpoint,
       );
 
       // Call the prediction callback if provided
@@ -68,7 +65,7 @@ function wrapInternalFetcher(
       // Remove special tokens and clean up the prediction
       const cleanPrediction = prediction.replace(
         /<\|editable_region_start\|>\n?|<\|editable_region_end\|>\n?/g,
-        ''
+        "",
       );
 
       // Create a diff suggestion
@@ -106,11 +103,10 @@ export const inlineCopilot = (
   model: string,
   apiEndpoint: string = "/api/autocomplete",
   onPrediction?: PredictionCallback,
-  delay: number = 500
+  delay: number = 500,
 ) => {
   return inlineSuggestion({
     fetchFn: wrapInternalFetcher(model, apiEndpoint, onPrediction),
     delay,
   });
 };
-

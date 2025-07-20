@@ -18,6 +18,7 @@ import {
   TransactionSpec,
 } from "@codemirror/state";
 import { debouncePromise } from "./lib/utils";
+import * as Diff from "diff";
 
 /**
  * The inner method to fetch suggestions: this is
@@ -41,7 +42,9 @@ export interface DiffSuggestion {
 /**
  * Current state of the autosuggestion
  */
-const InlineSuggestionState = StateField.define<{ suggestion: null | DiffSuggestion }>({
+const InlineSuggestionState = StateField.define<{
+  suggestion: null | DiffSuggestion;
+}>({
   create() {
     return { suggestion: null };
   },
@@ -71,82 +74,18 @@ const InlineSuggestionEffect = StateEffect.define<{
 }>();
 
 /**
- * Calculate the specific ranges where changes occur between old and new text
- 
-function calculateChangeRanges(oldText: string, newText: string): Array<{ from: number; to: number; text: string }> {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  
-  // Remove empty string at the end if present (happens when text ends with newline)
-  if (oldLines.length > 0 && oldLines[oldLines.length - 1] === '') {
-    oldLines.pop();
-  }
-  if (newLines.length > 0 && newLines[newLines.length - 1] === '') {
-    newLines.pop();
-  }
-  console.log("oldLines", oldLines);
-  console.log("newLines", newLines);
-  const ranges: Array<{ from: number; to: number; text: string }> = [];
-  
-  let currentPos = 0;
-  
-  // Process lines that exist in both old and new text
-  const minLines = Math.min(oldLines.length, newLines.length);
-  console.log("minLines", minLines);
-  console.log("oldLines", oldLines.length);
-  console.log("newLines", newLines.length);
-
-  for (let i = 0; i < minLines; i++) {
-    const oldLine = oldLines[i];
-    const newLine = newLines[i];
-    
-    if (oldLine !== newLine) {
-      const lineStart = currentPos;
-      const lineEnd = lineStart + oldLine.length;
-      
-      ranges.push({
-        from: lineStart,
-        to: lineEnd,
-        text: newLine
-      });
-    }
-    
-    currentPos += oldLine.length + 1; // +1 for newline character
-  }
-  
-  // Handle additional lines in new text beyond the old text
-  if (newLines.length > oldLines.length) {
-    const additionalLines = newLines.slice(oldLines.length);
-    const additionalText = additionalLines.join('\n');
-    
-    // For additional lines, we should place them at the end of the current document
-    // since the old text represents the current document state
-    const insertPosition = oldText.length;
-    
-    ranges.push({
-      from: insertPosition,
-      to: insertPosition + additionalText.length,
-      text: additionalText
-    });
-  }
-  
-  return ranges;
-}
-*/
-
-/**
  * Widget for displaying ghost text inline
  */
 class GhostTextWidget extends WidgetType {
   text: string;
   suggestion: DiffSuggestion;
-  
+
   constructor(text: string, suggestion: DiffSuggestion) {
     super();
     this.text = text;
     this.suggestion = suggestion;
   }
-  
+
   toDOM(view: EditorView) {
     const span = document.createElement("span");
     span.className = "cm-ghost-text";
@@ -163,7 +102,7 @@ class GhostTextWidget extends WidgetType {
     span.onclick = (e) => this.accept(e, view);
     return span;
   }
-  
+
   accept(e: MouseEvent, view: EditorView) {
     const config = view.state.facet(suggestionConfigFacet);
     if (!config.acceptOnClick) return;
@@ -179,11 +118,7 @@ class GhostTextWidget extends WidgetType {
     }
 
     view.dispatch({
-      ...insertDiffText(
-        view.state,
-        suggestion.newText,
-        suggestion,
-      ),
+      ...insertDiffText(view.state, suggestion.newText, suggestion),
     });
     return true;
   }
@@ -194,12 +129,12 @@ class GhostTextWidget extends WidgetType {
  */
 class AcceptIndicatorWidget extends WidgetType {
   suggestion: DiffSuggestion;
-  
+
   constructor(suggestion: DiffSuggestion) {
     super();
     this.suggestion = suggestion;
   }
-  
+
   toDOM(view: EditorView) {
     console.log("AcceptIndicatorWidget.toDOM called");
     const container = document.createElement("div");
@@ -208,7 +143,7 @@ class AcceptIndicatorWidget extends WidgetType {
       gap: 8px;
       align-items: center;
     `;
-    
+
     // Accept button
     const acceptSpan = document.createElement("span");
     acceptSpan.className = "cm-accept-indicator";
@@ -226,7 +161,7 @@ class AcceptIndicatorWidget extends WidgetType {
     acceptSpan.textContent = "💡 Accept [Tab]";
     acceptSpan.onclick = (e) => this.accept(e, view);
     container.appendChild(acceptSpan);
-    
+
     // Reject button
     const rejectSpan = document.createElement("span");
     rejectSpan.className = "cm-reject-indicator";
@@ -243,10 +178,10 @@ class AcceptIndicatorWidget extends WidgetType {
     rejectSpan.textContent = "❌ Reject [Esc]";
     rejectSpan.onclick = (e) => this.reject(e, view);
     container.appendChild(rejectSpan);
-    
+
     return container;
   }
-  
+
   accept(e: MouseEvent, view: EditorView) {
     const config = view.state.facet(suggestionConfigFacet);
     if (!config.acceptOnClick) return;
@@ -262,22 +197,21 @@ class AcceptIndicatorWidget extends WidgetType {
     }
 
     view.dispatch({
-      ...insertDiffText(
-        view.state,
-        suggestion.newText,
-        suggestion,
-      ),
+      ...insertDiffText(view.state, suggestion.newText, suggestion),
     });
     return true;
   }
-  
+
   reject(e: MouseEvent, view: EditorView) {
     e.stopPropagation();
     e.preventDefault();
 
     // Clear the suggestion
     view.dispatch({
-      effects: InlineSuggestionEffect.of({ suggestion: null, doc: view.state.doc }),
+      effects: InlineSuggestionEffect.of({
+        suggestion: null,
+        doc: view.state.doc,
+      }),
     });
     return true;
   }
@@ -288,96 +222,90 @@ class AcceptIndicatorWidget extends WidgetType {
  * this creates multiple decoration widgets for the ranges
  * where changes occur in the document.
  */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
-  console.log("=====suggestion oldText======")
-  console.log(suggestion.oldText)
-  console.log("=====end suggestion oldText======")
-  console.log("=====suggestion newText======")
-  console.log(suggestion.newText)
-  console.log("=====end suggestion newText======")
-  console.log("=====prefix======")
-  console.log(suggestion.prefix)
-  console.log("=====suffix======")
-  console.log(suggestion.suffix)
-  console.log("=====end prefix/suffix======\n\n")
+function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
+  const cursorMarker = "<|user_cursor_is_here|>";
+  const cursorMarkerWithNewline = "<|user_cursor_is_here|>\n";
 
-  // Use the cursor marker to determine exactly what should be ghost text
-  const cursorMarker = '<|user_cursor_is_here|>';
-  let ghostText = '';
-  
-  if (suggestion.newText.includes(cursorMarker)) {
-    // Split the newText at the cursor marker to get content before and after
-    const parts = suggestion.newText.split(cursorMarker);
-    const contentBeforeMarker = parts[0];
-    
-    // Ghost text is everything that would be added from current cursor to where the marker is
-    // The prefix represents what's already typed, so we need to extract what's new
-    const prefixLength = suggestion.prefix.length;
-    
-    // Extract ghost text: everything from the end of the prefix to the cursor marker
-    if (contentBeforeMarker.length > prefixLength) {
-      ghostText = contentBeforeMarker.slice(prefixLength);
-    }
-    
-    console.log(`Prefix length: ${prefixLength}`);
-    console.log(`Content before marker length: ${contentBeforeMarker.length}`);
-    console.log(`Content before marker: "${contentBeforeMarker}"`);
-    console.log(`Extracted ghost text: "${ghostText}"`);
-  } else {
-    // No cursor marker found - skip ghost text
+  if (!suggestion.newText.includes(cursorMarker)) {
     console.log("No cursor marker found, skipping ghost text");
-    ghostText = '';
+    return Decoration.none;
   }
-  
-  console.log("=====ghost text analysis======")
-  console.log(`ghostText: "${ghostText}"`)
-  console.log("=====end ghost text analysis======")
 
-  const decorations = [];
-  
+  // Remove cursor marker from both texts to compute the actual diff
+  const oldTextClean = suggestion.oldText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "");
+  const newTextClean = suggestion.newText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "");
+  console.log("====oldTextClean====");
+  console.log(oldTextClean);
+  console.log("====end oldTextClean====");
+  console.log("====newTextClean====");
+  console.log(newTextClean);
+  console.log("====end newTextClean====");
+
+  // Use diff library to compute precise changes
+  const diffs = Diff.diffChars(oldTextClean, newTextClean);
+  console.log(`====diffs (${diffs.length})====`);
+  // Extract only the added parts as ghost text
+  let ghostText = "";
+  for (const part of diffs) {
+    console.log("part", part);
+    if (part.added) {
+      ghostText += part.value;
+    }
+  }
+  console.log("====end diffs====");
+
+  console.log(`Computed ghost text using diff: "${ghostText}"`);
+
+  // Store the ghost text in the suggestion for use when accepting
+  suggestion.ghostText = ghostText;
+
   // Only show ghost text if there's content to show
-  if (ghostText.length > 0 && ghostText.trim().length > 0) {
-    // Store the ghost text in the suggestion for use when accepting
-    suggestion.ghostText = ghostText;
-    
-    // The cursor is at the end of the prefix, which maps to suggestion.to in the document
-    // since the prefix represents the content that's already been typed
-    const ghostStartPos = suggestion.to;
-    
-    // For new content after cursor, we use a widget decoration (insertion, not replacement)
-    // since we're adding new content beyond the existing text
-    console.log(`Ghost text positioning: start=${ghostStartPos}`);
-    console.log(`Ghost text content: "${ghostText}"`);
-    console.log(`Suggestion range: ${suggestion.from} to ${suggestion.to}`);
-    
-    // Create ghost text decoration as a widget (insertion) at the cursor position
-    const ghostWidget = Decoration.widget({
-      widget: new GhostTextWidget(ghostText, suggestion),
-      side: 1  // 1 means after the position
-    });
-    decorations.push(ghostWidget.range(ghostStartPos));
-    
-    // Add accept/reject button after the ghost text
-    const acceptWidget = Decoration.widget({
-      widget: new AcceptIndicatorWidget(suggestion),
-      side: 1  // 1 means after the position
-    });
-    decorations.push(acceptWidget.range(ghostStartPos));
-  } else {
+  if (ghostText.length === 0) {
     console.log("No ghost text needed - content is empty");
+    return Decoration.none;
   }
-  
-  console.log("Final decorations:");
-  for (const decoration of decorations) {
-    console.log(`Decoration: from=${decoration.from}, to=${decoration.to}`);
-  }
-  
+
+  // Position ghost text at the current cursor position
+  const ghostStartPos = suggestion.to;
+
+  const decorations = [
+    Decoration.widget({
+      widget: new GhostTextWidget(ghostText, suggestion),
+      side: 1, // 1 means after the position
+    }).range(ghostStartPos),
+
+    Decoration.widget({
+      widget: new AcceptIndicatorWidget(suggestion),
+      side: 1, // 1 means after the position
+    }).range(ghostStartPos),
+  ];
+
   return Decoration.set(decorations);
 }
 
 export const suggestionConfigFacet = Facet.define<
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void },
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn | undefined; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void }
+  {
+    acceptOnClick: boolean;
+    fetchFn: InlineFetchFn;
+    onEdit?: (
+      oldDoc: string,
+      newDoc: string,
+      from: number,
+      to: number,
+      insert: string,
+    ) => void;
+  },
+  {
+    acceptOnClick: boolean;
+    fetchFn: InlineFetchFn | undefined;
+    onEdit?: (
+      oldDoc: string,
+      newDoc: string,
+      from: number,
+      to: number,
+      insert: string,
+    ) => void;
+  }
 >({
   combine(value) {
     return {
@@ -417,7 +345,7 @@ export const fetchSuggestion = ViewPlugin.fromClass(
           if (tr.docChanged) {
             const oldDoc = update.startState.doc.toString();
             const newDoc = update.state.doc.toString();
-            
+
             // Find the changes in the transaction
             tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
               config.onEdit!(oldDoc, newDoc, fromA, toA, insert.toString());
@@ -432,9 +360,9 @@ export const fetchSuggestion = ViewPlugin.fromClass(
         );
         return;
       }
-      
+
       const result = await config.fetchFn(update.state);
-      
+
       // The result is now a DiffSuggestion object
       update.view.dispatch({
         effects: InlineSuggestionEffect.of({ suggestion: result, doc: doc }),
@@ -456,11 +384,8 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
         this.decorations = Decoration.none;
         return;
       }
-      
-      this.decorations = inlineSuggestionDecoration(
-        suggestion,
-        update.view,
-      );
+
+      this.decorations = inlineSuggestionDecoration(suggestion);
     }
   },
   {
@@ -485,11 +410,7 @@ const inlineSuggestionKeymap = Prec.highest(
         }
 
         view.dispatch({
-          ...insertDiffText(
-            view.state,
-            suggestion.newText,
-            suggestion,
-          ),
+          ...insertDiffText(view.state, suggestion.newText, suggestion),
         });
         return true;
       },
@@ -506,7 +427,10 @@ const inlineSuggestionKeymap = Prec.highest(
 
         // Clear the suggestion
         view.dispatch({
-          effects: InlineSuggestionEffect.of({ suggestion: null, doc: view.state.doc }),
+          effects: InlineSuggestionEffect.of({
+            suggestion: null,
+            doc: view.state.doc,
+          }),
         });
         return true;
       },
@@ -519,57 +443,34 @@ function insertDiffText(
   newText: string,
   suggestion?: DiffSuggestion,
 ): TransactionSpec {
-  const cursorMarker = '<|user_cursor_is_here|>';
-  
-  if (suggestion && suggestion.ghostText && newText.includes(cursorMarker)) {
-    // For suggestions with cursor marker, insert only the ghost text that was shown
-    // and position cursor where the marker indicates
-    const parts = newText.split(cursorMarker);
-    const beforeCursor = parts[0];
-    
-    // Calculate where the cursor should be positioned after accepting
-    const prefixLength = suggestion.prefix.length;
-    const cursorPositionInNewText = beforeCursor.length;
-    
-    // The ghost text is what we actually insert
-    const insertText = suggestion.ghostText;
-    
-    // Insert ghost text at current cursor position (end of existing content)
-    const insertPosition = suggestion.to;
-    const finalCursorPosition = insertPosition + (cursorPositionInNewText - prefixLength);
-    
-    return {
-      changes: { from: insertPosition, to: insertPosition, insert: insertText },
-      selection: EditorSelection.cursor(finalCursorPosition),
-      userEvent: "input.complete",
-    };
-  } else if (suggestion && suggestion.ghostText) {
-    // For inline suggestions, insert only the ghost text that was shown to the user
-    // at the cursor position (suggestion.to)
-    const insertText = suggestion.ghostText;
-    const cursorPosition = suggestion.to + insertText.length;
-    
-    return {
-      changes: { from: suggestion.to, to: suggestion.to, insert: insertText },
-      selection: EditorSelection.cursor(cursorPosition),
-      userEvent: "input.complete",
-    };
-  } else if (suggestion) {
-    // Fallback for suggestions without ghostText
-    return {
-      changes: { from: suggestion.from, to: suggestion.to, insert: newText },
-      selection: EditorSelection.cursor(suggestion.to + newText.length),
-      userEvent: "input.complete",
-    };
-  } else {
-    // Fallback to original behavior for backward compatibility
-    const cleanText = newText.trim();
+  const cursorMarker = "<|user_cursor_is_here|>";
+  const cursorMarkerWithNewline = "<|user_cursor_is_here|>\n";
+
+  if (!suggestion?.ghostText || !newText.includes(cursorMarker)) {
+    // Fallback to original behavior
+    const cleanText = newText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "").trim();
     return {
       changes: { from: 0, to: state.doc.length, insert: cleanText },
       selection: EditorSelection.cursor(cleanText.length),
       userEvent: "input.complete",
     };
   }
+
+  // Insert the ghost text at the current cursor position
+  const insertText = suggestion.ghostText;
+  const insertPosition = suggestion.to;
+
+  // Calculate final cursor position relative to where we're inserting
+  const finalCursorPosition = insertPosition + insertText.length;
+
+  console.log(`Insert text: "${insertText}"`);
+  console.log(`Final cursor position: ${finalCursorPosition}`);
+
+  return {
+    changes: { from: insertPosition, to: insertPosition, insert: insertText },
+    selection: EditorSelection.cursor(finalCursorPosition),
+    userEvent: "input.complete",
+  };
 }
 
 /**
@@ -597,7 +498,7 @@ type InlineSuggestionOptions = {
     newDoc: string,
     from: number,
     to: number,
-    insert: string
+    insert: string,
   ) => void;
 };
 

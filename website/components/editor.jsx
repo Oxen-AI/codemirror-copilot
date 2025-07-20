@@ -2,7 +2,7 @@ import dynamic from "next/dynamic";
 import { python } from "@codemirror/lang-python";
 import { dracula } from "@uiw/codemirror-theme-dracula";
 import { indentUnit } from "@codemirror/language";
-import { inlineCopilot, clearLocalCache, calculateDiff } from "../dist";
+import { inlineCopilot } from "../dist/src/index.js";
 import {
   Select,
   SelectContent,
