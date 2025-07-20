@@ -12,12 +12,6 @@ function addSpaceToNewlines(str) {
 async function completionOpenAI(prefix, suffix, lastEdit, model) {
   let prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
 
-Respond with just the modified code that compiles and runs and nothing else.
-
-Last Edit:
-${addSpaceToNewlines(lastEdit)}
-
-Context:
 <|editable_region_start|>
 ${prefix}<|user_cursor_is_here|>${suffix}
 <|editable_region_end|>

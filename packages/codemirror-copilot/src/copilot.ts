@@ -67,7 +67,7 @@ function wrapInternalFetcher(
 
       // Remove special tokens and clean up the prediction
       const cleanPrediction = prediction.replace(
-        /<\|editable_region_start\|>\n?|<\|user_cursor_is_here\|>\n?|<\|editable_region_end\|>\n?/g,
+        /<\|editable_region_start\|>\n?|<\|editable_region_end\|>\n?/g,
         ''
       );
 

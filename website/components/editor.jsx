@@ -118,7 +118,7 @@ function CodeEditor() {
           python(),
           indentUnit.of("    "),
           inlineCopilot(
-            "oxen:ox-live-apricot-bovid",
+            "oxen:ox-wonderful-pink-swordtail",
             "/api/autocomplete",
             (prediction, prompt) => {
               setLastPrediction(prediction);

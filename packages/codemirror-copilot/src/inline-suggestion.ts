@@ -301,55 +301,42 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
   console.log(suggestion.suffix)
   console.log("=====end prefix/suffix======\n\n")
 
-  // Find the cursor position based on prefix length
-  const cursorPos = suggestion.prefix.length;
+  // Use the cursor marker to determine exactly what should be ghost text
+  const cursorMarker = '<|user_cursor_is_here|>';
+  let ghostText = '';
   
-  // Calculate what text should appear after the cursor
-  const oldAfterCursor = suggestion.oldText.slice(cursorPos);
-  const newAfterCursor = suggestion.newText.slice(cursorPos);
-  
-  // Remove the suffix from newAfterCursor to get only the new content that should be shown as ghost text
-  let ghostText = newAfterCursor;
-  if (suggestion.suffix && suggestion.suffix.length > 0) {
-    // The suffix represents content that already exists in the document after the cursor
-    // We need to remove any part of this suffix that appears in the ghost text
+  if (suggestion.newText.includes(cursorMarker)) {
+    // Split the newText at the cursor marker to get content before and after
+    const parts = suggestion.newText.split(cursorMarker);
+    const contentBeforeMarker = parts[0];
     
-    // Try different strategies to remove suffix content
+    // Ghost text is everything that would be added from current cursor to where the marker is
+    // The prefix represents what's already typed, so we need to extract what's new
+    const prefixLength = suggestion.prefix.length;
     
-    // Strategy 1: Exact prefix removal
-    if (ghostText.startsWith(suggestion.suffix)) {
-      ghostText = ghostText.slice(suggestion.suffix.length);
-    } 
-    // Strategy 2: Exact suffix removal  
-    else if (ghostText.endsWith(suggestion.suffix)) {
-      ghostText = ghostText.slice(0, ghostText.length - suggestion.suffix.length);
+    // Extract ghost text: everything from the end of the prefix to the cursor marker
+    if (contentBeforeMarker.length > prefixLength) {
+      ghostText = contentBeforeMarker.slice(prefixLength);
     }
-    // Strategy 3: Find any occurrence of suffix content and remove from there
-    else {
-      const suffixTrimmed = suggestion.suffix.trim();
-      if (suffixTrimmed.length > 0) {
-        const suffixIndex = ghostText.indexOf(suffixTrimmed);
-        if (suffixIndex !== -1) {
-          // Remove everything from the suffix occurrence onwards, but also trim any trailing whitespace
-          ghostText = ghostText.slice(0, suffixIndex).trimEnd();
-        }
-      }
-    }
+    
+    console.log(`Prefix length: ${prefixLength}`);
+    console.log(`Content before marker length: ${contentBeforeMarker.length}`);
+    console.log(`Content before marker: "${contentBeforeMarker}"`);
+    console.log(`Extracted ghost text: "${ghostText}"`);
+  } else {
+    // No cursor marker found - skip ghost text
+    console.log("No cursor marker found, skipping ghost text");
+    ghostText = '';
   }
   
-  console.log("=====cursor analysis======")
-  console.log(`cursorPos: ${cursorPos}`)
-  console.log(`oldAfterCursor: "${oldAfterCursor}"`)
-  console.log(`newAfterCursor: "${newAfterCursor}"`)
-  console.log(`suffix: "${suggestion.suffix}"`)
-  console.log(`ghostText (filtered): "${ghostText}"`)
-  console.log("=====end cursor analysis======")
+  console.log("=====ghost text analysis======")
+  console.log(`ghostText: "${ghostText}"`)
+  console.log("=====end ghost text analysis======")
 
   const decorations = [];
   
-  // Only show ghost text if there's new content after filtering out the suffix
-  // Also skip if the content is the same when whitespace is stripped
-  if (ghostText.length > 0 && ghostText !== oldAfterCursor && ghostText.trim() !== oldAfterCursor.trim()) {
+  // Only show ghost text if there's content to show
+  if (ghostText.length > 0 && ghostText.trim().length > 0) {
     // Store the ghost text in the suggestion for use when accepting
     suggestion.ghostText = ghostText;
     
@@ -377,7 +364,7 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion, _: EditorView) {
     });
     decorations.push(acceptWidget.range(ghostStartPos));
   } else {
-    console.log("No ghost text needed - filtered content is empty or same as existing");
+    console.log("No ghost text needed - content is empty");
   }
   
   console.log("Final decorations:");
@@ -532,7 +519,31 @@ function insertDiffText(
   newText: string,
   suggestion?: DiffSuggestion,
 ): TransactionSpec {
-  if (suggestion && suggestion.ghostText) {
+  const cursorMarker = '<|user_cursor_is_here|>';
+  
+  if (suggestion && suggestion.ghostText && newText.includes(cursorMarker)) {
+    // For suggestions with cursor marker, insert only the ghost text that was shown
+    // and position cursor where the marker indicates
+    const parts = newText.split(cursorMarker);
+    const beforeCursor = parts[0];
+    
+    // Calculate where the cursor should be positioned after accepting
+    const prefixLength = suggestion.prefix.length;
+    const cursorPositionInNewText = beforeCursor.length;
+    
+    // The ghost text is what we actually insert
+    const insertText = suggestion.ghostText;
+    
+    // Insert ghost text at current cursor position (end of existing content)
+    const insertPosition = suggestion.to;
+    const finalCursorPosition = insertPosition + (cursorPositionInNewText - prefixLength);
+    
+    return {
+      changes: { from: insertPosition, to: insertPosition, insert: insertText },
+      selection: EditorSelection.cursor(finalCursorPosition),
+      userEvent: "input.complete",
+    };
+  } else if (suggestion && suggestion.ghostText) {
     // For inline suggestions, insert only the ghost text that was shown to the user
     // at the cursor position (suggestion.to)
     const insertText = suggestion.ghostText;
