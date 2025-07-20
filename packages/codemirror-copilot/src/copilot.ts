@@ -24,7 +24,6 @@ async function fetchPrediction(
       prefix,
       suffix,
       model,
-      lastEdit: prefix + suffix,
     }),
   });
 

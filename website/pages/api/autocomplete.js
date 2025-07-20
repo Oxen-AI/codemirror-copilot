@@ -5,11 +5,7 @@ const openai = new OpenAI({
   baseURL: "https://hub.oxen.ai/api",
 });
 
-function addSpaceToNewlines(str) {
-  return str.replace(/^/gm, ' ');
-}
-
-async function completionOpenAI(prefix, suffix, lastEdit, model) {
+async function completionOpenAI(prefix, suffix, model) {
   let prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
 
 <|editable_region_start|>
@@ -48,11 +44,10 @@ ${prefix}<|user_cursor_is_here|>${suffix}
 }
 
 export default async function handler(req, res) {
-  const { prefix, suffix, lastEdit, model } = req.body;
+  const { prefix, suffix, model } = req.body;
   console.log("prefix", prefix)
   console.log("suffix", suffix)
   console.log("model", model)
-  console.log("lastEdit", lastEdit)
-  const { prediction, prompt } = await completionOpenAI(prefix, suffix, lastEdit, model);
+  const { prediction, prompt } = await completionOpenAI(prefix, suffix, model);
   res.status(200).json({ prediction, prompt })
 }
