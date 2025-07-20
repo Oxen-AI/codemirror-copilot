@@ -104,8 +104,6 @@ class GhostTextWidget extends WidgetType {
     
     // Create spans for each diff part
     this.diffParts.forEach((part) => {
-      if (part.type === 'unchanged') return; // Skip unchanged parts
-      
       const span = document.createElement("span");
       span.className = `cm-ghost-text cm-ghost-${part.type}`;
       
@@ -129,6 +127,11 @@ class GhostTextWidget extends WidgetType {
           padding: 1px 2px;
           margin-right: 1px;
           text-decoration: line-through;
+        `;
+      } else if (part.type === 'unchanged') {
+        span.style.cssText = `
+          color: #888;
+          opacity: 0.7;
         `;
       }
       
@@ -301,24 +304,39 @@ function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
   const diffParts: DiffPart[] = [];
   let ghostText = "";
   
+  // Add a newline to the ghost text if the last character of the last part is a newline
+  var should_add_newline = false;
   for (const part of diffs) {
     console.log("oldCursorPosition", oldCursorPosition, "newCursorPosition", newCursorPosition);
-    console.log("diffTextPos", diffTextPos);
+    console.log("diffTextPos", diffTextPos, "end", diffTextPos + part.value.length);
     console.log("part", part);
     
+    var value = part.value;
+
+    // console.log("value", value);
+    // console.log("value[value.length - 1]", value[value.length - 1]);
+
+    if (should_add_newline) {
+      value = '\n' + value;
+      should_add_newline = false;
+    }
+
     if (diffTextPos >= oldCursorPosition && (diffTextPos + part.value.length) <= newCursorPosition) {
       if (part.added) {
-        diffParts.push({ text: part.value, type: 'added' });
+        diffParts.push({ text: value, type: 'added' });
       }
       if (part.removed) {
-        diffParts.push({ text: part.value, type: 'removed' });
+        diffParts.push({ text: value, type: 'removed' });
       }
       if (!part.added && !part.removed) {
-        diffParts.push({ text: part.value, type: 'unchanged' });
+        diffParts.push({ text: value, type: 'unchanged' });
       }
-      diffTextPos += part.count;
-      ghostText += part.value;
+      ghostText += value;
     }
+    if (value[value.length - 1] === '\n') {
+      should_add_newline = true;
+    }
+    diffTextPos += part.count;
   }
   console.log("====end diffs====");
 
