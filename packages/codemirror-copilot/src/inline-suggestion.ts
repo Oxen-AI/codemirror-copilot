@@ -102,14 +102,6 @@ function calculateDiff(
     }
   });
 
-  // If no changes, show a simple replacement message
-  if (added.length === 0 && removed.length === 0) {
-    return {
-      added: `→ ${cleanNewText.trim()}`,
-      removed: "",
-    };
-  }
-
   return {
     added: added.join("\n"),
     removed: removed.join("\n"),

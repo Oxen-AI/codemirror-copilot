@@ -13,8 +13,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 
-const DEFAULTCODE = `def add(num1, num2):
-  return`;
+// const DEFAULTCODE = `def add(num1, num2):
+//   return`;
+
+const DEFAULTCODE = `import pandas as pd
+
+# read csv file
+df = pd.read_csv("data.csv")`;
+
 
 function CodeEditor() {
   
@@ -49,7 +55,7 @@ function CodeEditor() {
                 body: JSON.stringify({
                   prefix,
                   suffix,
-                  model: "baseten:dgonz-inner-apricot-planarian",
+                  model: "oxen:ox-wonderful-pink-swordtail",
                 }),
               });
 
