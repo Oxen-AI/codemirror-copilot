@@ -5,27 +5,14 @@ const openai = new OpenAI({
   baseURL: "https://hub.oxen.ai/api",
 });
 
-async function completionOpenAI(prefix, suffix, lastEdit, model="baseten:dgonz-flexible-coffee-harrier", language, lastPatch) {
-  let patchInfo = "";
-  if (lastPatch) {
-    patchInfo = `
-${lastPatch.contextBefore ? `${lastPatch.contextBefore.join('\n')}` : ''}
-- ${lastPatch.original}
-+ ${lastPatch.modified}
-${lastPatch.contextAfter ? `${lastPatch.contextAfter.join('\n')}` : ''}
-`;
-  }
+async function completionOpenAI(prefix, suffix, model="baseten:dgonz-inner-apricot-planarian") {
 
-  const prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location.
+  const prompt = `You are a code completion assistant and your task is to analyze user edits and then rewrite the marked region, taking into account the cursor location. The user intent will sometimes be explicitly given below, in which case you must follow this intent. If it is not present, you must infer the intent before implementing the change.
 
-Last Edit:
-${patchInfo}
-
-Context:
-<|editable_region_start|>
-${prefix}<|user_cursor_is_here|>
-${suffix}
-<|editable_region_end|>
+<|INTENT|>
+<|EDIT_START|>
+${prefix}<|user_cursor_is_here|>${suffix}
+<|EDIT_END|>
 `
   const chatCompletion = await openai.chat.completions.create({
     messages: [
@@ -48,18 +35,15 @@ ${suffix}
 
   const prediction = chatCompletion.output.content[0].text;
 
-  // Extract the code from <|editable_region_start|> to <|editable_region_end|>
-  const code = prediction.match(/<\|editable_region_start\|>(.*?)<\|editable_region_end\|>/s)[1];
+  // Extract the code from <|EDIT_START|> to <|EDIT_END|>
+  var code = prediction.match(/<\|EDIT_START\|>(.*?)<\|EDIT_END\|>/s)[1];
+  code = code.replace(/<\|user_cursor_is_here\|>/g, "");
   return code;
 }
 
 export default async function handler(req, res) {
-  const { prefix, suffix, lastEdit, model, language, lastPatch } = req.body;
-  console.log("prefix", prefix)
-  console.log("suffix", suffix)
+  const { prefix, suffix, model } = req.body;
   console.log("model", model)
-  console.log("language", language)
-  console.log("lastPatch", lastPatch)
-  const prediction = await completionOpenAI(prefix, suffix, lastEdit, model, language, lastPatch);
+  const prediction = await completionOpenAI(prefix, suffix, model);
   res.status(200).json({ prediction })
 }
