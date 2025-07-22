@@ -18,6 +18,7 @@ import {
   TransactionSpec,
 } from "@codemirror/state";
 import { debouncePromise } from "./lib/utils";
+import { diffLines } from "diff";
 
 /**
  * The inner method to fetch suggestions: this is
@@ -71,7 +72,7 @@ const InlineSuggestionEffect = StateEffect.define<{
 }>();
 
 /**
- * Simple diff calculation to highlight changes
+ * Calculate diff using the diff library to highlight changes
  */
 function calculateDiff(
   oldText: string,
@@ -80,29 +81,26 @@ function calculateDiff(
   // Strip cursor marker from newText for diff display
   const cleanNewText = newText.replace(/<\|user_cursor_is_here\|>/g, "");
   
-  const oldLines = oldText.split("\n");
-  const newLines = cleanNewText.split("\n");
+  // Use the diff library to calculate line-based differences
+  const diffResult = diffLines(oldText, cleanNewText, {
+    newlineIsToken: true,
+    ignoreWhitespace: false,
+  });
 
   const added: string[] = [];
   const removed: string[] = [];
 
-  const maxLines = Math.max(oldLines.length, newLines.length);
-
-  for (let i = 0; i < maxLines; i++) {
-    const oldLine = oldLines[i] || "";
-    const newLine = newLines[i] || "";
-
-    if (oldLine !== newLine) {
-      if (oldLine) {
-        // Show removed line with red color
-        removed.push(`- ${oldLine}`);
-      }
-      if (newLine) {
-        // Show added line with green color
-        added.push(`+ ${newLine}`);
-      }
+  diffResult.forEach((part) => {
+    if (part.added) {
+      // Show added lines with green color
+      const lines = part.value.split('\n').filter(line => line.length > 0);
+      lines.forEach(line => added.push(`+ ${line}`));
+    } else if (part.removed) {
+      // Show removed lines with red color
+      const lines = part.value.split('\n').filter(line => line.length > 0);
+      lines.forEach(line => removed.push(`- ${line}`));
     }
-  }
+  });
 
   // If no changes, show a simple replacement message
   if (added.length === 0 && removed.length === 0) {
