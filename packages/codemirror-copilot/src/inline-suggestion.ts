@@ -39,7 +39,9 @@ interface DiffSuggestion {
 /**
  * Current state of the autosuggestion
  */
-const InlineSuggestionState = StateField.define<{ suggestion: null | DiffSuggestion }>({
+const InlineSuggestionState = StateField.define<{
+  suggestion: null | DiffSuggestion;
+}>({
   create() {
     return { suggestion: null };
   },
@@ -71,19 +73,25 @@ const InlineSuggestionEffect = StateEffect.define<{
 /**
  * Simple diff calculation to highlight changes
  */
-function calculateDiff(oldText: string, newText: string): { added: string; removed: string } {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
+function calculateDiff(
+  oldText: string,
+  newText: string,
+): { added: string; removed: string } {
+  // Strip cursor marker from newText for diff display
+  const cleanNewText = newText.replace(/<\|user_cursor_is_here\|>/g, "");
   
+  const oldLines = oldText.split("\n");
+  const newLines = cleanNewText.split("\n");
+
   const added: string[] = [];
   const removed: string[] = [];
-  
+
   const maxLines = Math.max(oldLines.length, newLines.length);
-  
+
   for (let i = 0; i < maxLines; i++) {
-    const oldLine = oldLines[i] || '';
-    const newLine = newLines[i] || '';
-    
+    const oldLine = oldLines[i] || "";
+    const newLine = newLines[i] || "";
+
     if (oldLine !== newLine) {
       if (oldLine) {
         // Show removed line with red color
@@ -95,18 +103,18 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
       }
     }
   }
-  
+
   // If no changes, show a simple replacement message
   if (added.length === 0 && removed.length === 0) {
     return {
-      added: `→ ${newText.trim()}`,
-      removed: ''
+      added: `→ ${cleanNewText.trim()}`,
+      removed: "",
     };
   }
-  
+
   return {
-    added: added.join('\n'),
-    removed: removed.join('\n')
+    added: added.join("\n"),
+    removed: removed.join("\n"),
   };
 }
 
@@ -116,25 +124,51 @@ function calculateDiff(oldText: string, newText: string): { added: string; remov
  * text to show what would be inserted if you accept
  * the AI suggestion.
  */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
+function inlineSuggestionDecoration(suggestion: DiffSuggestion, state: EditorState) {
   const widgets = [];
-  
+
   // Create decoration for the diff display
   const w = Decoration.widget({
     widget: new InlineSuggestionWidget(suggestion),
-    side: 1,
+    side: -1, // Place before the line content
   });
+
+  // Get the current cursor position
+  const cursorPos = state.selection.main.head;
   
-  // If replacing entire document, show at the beginning
-  const position = suggestion.replaceEntireDocument ? 0 : suggestion.from;
-  widgets.push(w.range(position));
+  // Find the start of the line containing the cursor
+  const line = state.doc.lineAt(cursorPos);
+  const lineStart = line.from;
   
+  // Position the widget at the start of the current line
+  widgets.push(w.range(lineStart));
+
   return Decoration.set(widgets);
 }
 
 export const suggestionConfigFacet = Facet.define<
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void },
-  { acceptOnClick: boolean; fetchFn: InlineFetchFn | undefined; onEdit?: (oldDoc: string, newDoc: string, from: number, to: number, insert: string) => void }
+  {
+    acceptOnClick: boolean;
+    fetchFn: InlineFetchFn;
+    onEdit?: (
+      oldDoc: string,
+      newDoc: string,
+      from: number,
+      to: number,
+      insert: string,
+    ) => void;
+  },
+  {
+    acceptOnClick: boolean;
+    fetchFn: InlineFetchFn | undefined;
+    onEdit?: (
+      oldDoc: string,
+      newDoc: string,
+      from: number,
+      to: number,
+      insert: string,
+    ) => void;
+  }
 >({
   combine(value) {
     return {
@@ -159,7 +193,7 @@ class InlineSuggestionWidget extends WidgetType {
     super();
     this.suggestion = suggestion;
   }
-  
+
   toDOM(view: EditorView) {
     const container = document.createElement("div");
     container.className = "cm-inline-suggestion";
@@ -176,41 +210,46 @@ class InlineSuggestionWidget extends WidgetType {
       max-width: 100%;
       overflow-x: auto;
     `;
-    
-    const diff = calculateDiff(this.suggestion.oldText, this.suggestion.newText);
-    
+
+    const diff = calculateDiff(
+      this.suggestion.oldText,
+      this.suggestion.newText,
+    );
+
     // Add a header to indicate this is a suggestion
     const header = document.createElement("div");
-    header.style.cssText = "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
-    header.textContent = this.suggestion.replaceEntireDocument 
-      ? "💡 AI Document Rewrite" 
-      : "💡 AI Suggestion";
+    header.style.cssText =
+      "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
+    header.textContent = "💡 AI Suggestion";
     container.appendChild(header);
-    
+
     if (diff.removed) {
       const removedSpan = document.createElement("div");
-      removedSpan.style.cssText = "color: #d73a49; margin-bottom: 4px; font-family: monospace; white-space: pre;";
+      removedSpan.style.cssText =
+        "color: #d73a49; margin-bottom: 4px; font-family: monospace; white-space: pre;";
       removedSpan.textContent = diff.removed;
       container.appendChild(removedSpan);
     }
-    
+
     if (diff.added) {
       const addedSpan = document.createElement("div");
-      addedSpan.style.cssText = "color: #28a745; font-family: monospace; white-space: pre;";
+      addedSpan.style.cssText =
+        "color: #28a745; font-family: monospace; white-space: pre;";
       addedSpan.textContent = diff.added;
       container.appendChild(addedSpan);
     }
-    
+
     // Add a hint about how to accept
     const hint = document.createElement("div");
-    hint.style.cssText = "font-size: 0.75em; color: #666; margin-top: 4px; font-style: italic;";
+    hint.style.cssText =
+      "font-size: 0.75em; color: #666; margin-top: 4px; font-style: italic;";
     hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
     container.appendChild(hint);
-    
+
     container.onclick = (e) => this.accept(e, view);
     return container;
   }
-  
+
   accept(e: MouseEvent, view: EditorView) {
     const config = view.state.facet(suggestionConfigFacet);
     if (!config.acceptOnClick) return;
@@ -226,13 +265,7 @@ class InlineSuggestionWidget extends WidgetType {
     }
 
     view.dispatch({
-      ...insertDiffText(
-        view.state,
-        suggestion.newText,
-        suggestion.from,
-        suggestion.to,
-        suggestion.replaceEntireDocument,
-      ),
+      ...insertDiffText(view.state, suggestion.newText),
     });
     return true;
   }
@@ -267,7 +300,7 @@ export const fetchSuggestion = ViewPlugin.fromClass(
           if (tr.docChanged) {
             const oldDoc = update.startState.doc.toString();
             const newDoc = update.state.doc.toString();
-            
+
             // Find the changes in the transaction
             tr.changes.iterChanges((fromA, toA, _fromB, _toB, insert) => {
               config.onEdit!(oldDoc, newDoc, fromA, toA, insert.toString());
@@ -282,9 +315,9 @@ export const fetchSuggestion = ViewPlugin.fromClass(
         );
         return;
       }
-      
+
       const result = await config.fetchFn(update.state);
-      
+
       // The result is now a DiffSuggestion object
       update.view.dispatch({
         effects: InlineSuggestionEffect.of({ suggestion: result, doc: doc }),
@@ -306,10 +339,8 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
         this.decorations = Decoration.none;
         return;
       }
-      
-      this.decorations = inlineSuggestionDecoration(
-        suggestion,
-      );
+
+      this.decorations = inlineSuggestionDecoration(suggestion, update.state);
     }
   },
   {
@@ -334,13 +365,7 @@ const inlineSuggestionKeymap = Prec.highest(
         }
 
         view.dispatch({
-          ...insertDiffText(
-            view.state,
-            suggestion.newText,
-            suggestion.from,
-            suggestion.to,
-            suggestion.replaceEntireDocument,
-          ),
+          ...insertDiffText(view.state, suggestion.newText),
         });
         return true;
       },
@@ -357,7 +382,10 @@ const inlineSuggestionKeymap = Prec.highest(
 
         // Clear the suggestion
         view.dispatch({
-          effects: InlineSuggestionEffect.of({ suggestion: null, doc: view.state.doc }),
+          effects: InlineSuggestionEffect.of({
+            suggestion: null,
+            doc: view.state.doc,
+          }),
         });
         return true;
       },
@@ -365,44 +393,27 @@ const inlineSuggestionKeymap = Prec.highest(
   ]),
 );
 
-function insertDiffText(
-  state: EditorState,
-  text: string,
-  from: number,
-  to: number,
-  replaceEntireDocument: boolean = false,
-): TransactionSpec {
-  if (replaceEntireDocument) {
-    // Replace the entire document, ensuring no extra newlines
-    const cleanText = text.trim();
-    return {
-      changes: { from: 0, to: state.doc.length, insert: cleanText },
-      selection: EditorSelection.cursor(cleanText.length),
-      userEvent: "input.complete",
-    };
+function insertDiffText(state: EditorState, text: string): TransactionSpec {
+  // Handle cursor positioning with marker
+  const cursorMarker = "<|user_cursor_is_here|>";
+  const cursorIndex = text.indexOf(cursorMarker);
+  
+  // Remove the cursor marker from the text
+  const cleanText = text.replace(cursorMarker, "").trim();
+  
+  // Calculate cursor position
+  let cursorPosition: number;
+  if (cursorIndex !== -1) {
+    // If marker was found, position cursor at that location (accounting for removed marker)
+    cursorPosition = cursorIndex;
+  } else {
+    // If no marker, position cursor at the end
+    cursorPosition = cleanText.length;
   }
   
-  // Original behavior for partial replacement
   return {
-    ...state.changeByRange((range) => {
-      if (range == state.selection.main)
-        return {
-          changes: { from: from, to: to, insert: text },
-          range: EditorSelection.cursor(from + text.length),
-        };
-      const len = to - from;
-      if (
-        !range.empty ||
-        (len &&
-          state.sliceDoc(range.from - len, range.from) !=
-            state.sliceDoc(from, to))
-      )
-        return { range };
-      return {
-        changes: { from: range.from - len, to: range.from, insert: text },
-        range: EditorSelection.cursor(range.from - len + text.length),
-      };
-    }),
+    changes: { from: 0, to: state.doc.length, insert: cleanText },
+    selection: EditorSelection.cursor(cursorPosition),
     userEvent: "input.complete",
   };
 }
@@ -432,7 +443,7 @@ type InlineSuggestionOptions = {
     newDoc: string,
     from: number,
     to: number,
-    insert: string
+    insert: string,
   ) => void;
 };
 

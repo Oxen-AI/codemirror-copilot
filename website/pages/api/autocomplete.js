@@ -37,7 +37,6 @@ ${prefix}<|user_cursor_is_here|>${suffix}
 
   // Extract the code from <|EDIT_START|> to <|EDIT_END|>
   var code = prediction.match(/<\|EDIT_START\|>(.*?)<\|EDIT_END\|>/s)[1];
-  code = code.replace(/<\|user_cursor_is_here\|>/g, "");
   return code;
 }
 
