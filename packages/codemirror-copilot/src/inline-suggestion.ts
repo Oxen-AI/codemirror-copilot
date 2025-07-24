@@ -1,10 +1,7 @@
 import {
   ViewPlugin,
-  DecorationSet,
   EditorView,
   ViewUpdate,
-  Decoration,
-  WidgetType,
   keymap,
 } from "@codemirror/view";
 import {
@@ -18,7 +15,7 @@ import {
   TransactionSpec,
 } from "@codemirror/state";
 import { debouncePromise } from "./lib/utils";
-import * as Diff from "diff";
+import { diffLines } from "diff";
 
 /**
  * The inner method to fetch suggestions: this is
@@ -32,11 +29,9 @@ type InlineFetchFn = (state: EditorState) => Promise<DiffSuggestion>;
 export interface DiffSuggestion {
   oldText: string;
   newText: string;
-  prefix: string;
-  suffix: string;
   from: number;
   to: number;
-  ghostText?: string; // The actual text shown as ghost text to the user
+  replaceEntireDocument?: boolean; // New flag to indicate full document replacement
 }
 
 /**
@@ -74,301 +69,43 @@ const InlineSuggestionEffect = StateEffect.define<{
 }>();
 
 /**
- * Represents a piece of diff text with type information
+ * Calculate diff using the diff library to highlight changes
  */
-interface DiffPart {
-  text: string;
-  type: 'added' | 'removed' | 'unchanged';
+function calculateDiff(
+  oldText: string,
+  newText: string,
+): { added: string; removed: string } {
+  // Strip cursor marker from newText for diff display
+  const cleanNewText = newText.replace(/<\|user_cursor_is_here\|>/g, "");
+  
+  // Use the diff library to calculate line-based differences
+  const diffResult = diffLines(oldText, cleanNewText, {
+    newlineIsToken: true,
+    ignoreWhitespace: false,
+  });
+
+  const added: string[] = [];
+  const removed: string[] = [];
+
+  diffResult.forEach((part) => {
+    if (part.added) {
+      // Show added lines with green color
+      const lines = part.value.split('\n').filter(line => line.length > 0);
+      lines.forEach(line => added.push(`+ ${line}`));
+    } else if (part.removed) {
+      // Show removed lines with red color
+      const lines = part.value.split('\n').filter(line => line.length > 0);
+      lines.forEach(line => removed.push(`- ${line}`));
+    }
+  });
+
+  return {
+    added: added.join("\n"),
+    removed: removed.join("\n"),
+  };
 }
 
-/**
- * Widget for displaying ghost text inline with diff information
- */
-class GhostTextWidget extends WidgetType {
-  diffParts: DiffPart[];
-  suggestion: DiffSuggestion;
 
-  constructor(diffParts: DiffPart[], suggestion: DiffSuggestion) {
-    super();
-    this.diffParts = diffParts;
-    this.suggestion = suggestion;
-  }
-
-  toDOM(view: EditorView) {
-    const container = document.createElement("span");
-    container.className = "cm-ghost-text-container";
-    container.style.cssText = `
-      cursor: pointer;
-      display: inline;
-    `;
-    
-    // Create spans for each diff part
-    this.diffParts.forEach((part) => {
-      const span = document.createElement("span");
-      span.className = `cm-ghost-text cm-ghost-${part.type}`;
-      
-      if (part.type === 'added') {
-        span.style.cssText = `
-          color: #22863a;
-          opacity: 0.7;
-          font-style: italic;
-          background: rgba(34, 134, 58, 0.1);
-          border-radius: 2px;
-          padding: 1px 2px;
-          margin-right: 1px;
-        `;
-      } else if (part.type === 'removed') {
-        span.style.cssText = `
-          color: #d73a49;
-          opacity: 0.7;
-          font-style: italic;
-          background: rgba(215, 58, 73, 0.1);
-          border-radius: 2px;
-          padding: 1px 2px;
-          margin-right: 1px;
-          text-decoration: line-through;
-        `;
-      } else if (part.type === 'unchanged') {
-        span.style.cssText = `
-          color: #888;
-          opacity: 0.7;
-        `;
-      }
-      
-      span.textContent = part.text;
-      container.appendChild(span);
-    });
-    
-    container.onclick = (e) => this.accept(e, view);
-    return container;
-  }
-
-  accept(e: MouseEvent, view: EditorView) {
-    const config = view.state.facet(suggestionConfigFacet);
-    if (!config.acceptOnClick) return;
-
-    e.stopPropagation();
-    e.preventDefault();
-
-    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
-
-    // If there is no suggestion, do nothing and let the default keymap handle it
-    if (!suggestion) {
-      return false;
-    }
-
-    view.dispatch({
-      ...insertDiffText(view.state, suggestion.newText, suggestion),
-    });
-    return true;
-  }
-}
-
-/**
- * Small widget to indicate that a suggestion can be accepted
- */
-class AcceptIndicatorWidget extends WidgetType {
-  suggestion: DiffSuggestion;
-
-  constructor(suggestion: DiffSuggestion) {
-    super();
-    this.suggestion = suggestion;
-  }
-
-  toDOM(view: EditorView) {
-    console.log("AcceptIndicatorWidget.toDOM called");
-    const container = document.createElement("div");
-    container.style.cssText = `
-      display: inline-flex;
-      gap: 8px;
-      align-items: center;
-    `;
-
-    // Accept button
-    const acceptSpan = document.createElement("span");
-    acceptSpan.className = "cm-accept-indicator";
-    acceptSpan.style.cssText = `
-      color: #007acc;
-      opacity: 0.8;
-      font-size: 0.8em;
-      cursor: pointer;
-      padding: 1px 4px;
-      background: rgba(0, 122, 204, 0.1);
-      border-radius: 3px;
-      border: 1px solid rgba(0, 122, 204, 0.3);
-      margin-left: 8px;
-    `;
-    acceptSpan.textContent = "💡 Accept [Tab]";
-    acceptSpan.onclick = (e) => this.accept(e, view);
-    container.appendChild(acceptSpan);
-
-    // Reject button
-    const rejectSpan = document.createElement("span");
-    rejectSpan.className = "cm-reject-indicator";
-    rejectSpan.style.cssText = `
-      color: #d73a49;
-      opacity: 0.8;
-      font-size: 0.8em;
-      cursor: pointer;
-      padding: 1px 4px;
-      background: rgba(215, 58, 73, 0.1);
-      border-radius: 3px;
-      border: 1px solid rgba(215, 58, 73, 0.3);
-    `;
-    rejectSpan.textContent = "❌ Reject [Esc]";
-    rejectSpan.onclick = (e) => this.reject(e, view);
-    container.appendChild(rejectSpan);
-
-    return container;
-  }
-
-  accept(e: MouseEvent, view: EditorView) {
-    const config = view.state.facet(suggestionConfigFacet);
-    if (!config.acceptOnClick) return;
-
-    e.stopPropagation();
-    e.preventDefault();
-
-    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
-
-    // If there is no suggestion, do nothing and let the default keymap handle it
-    if (!suggestion) {
-      return false;
-    }
-
-    view.dispatch({
-      ...insertDiffText(view.state, suggestion.newText, suggestion),
-    });
-    return true;
-  }
-
-  reject(e: MouseEvent, view: EditorView) {
-    e.stopPropagation();
-    e.preventDefault();
-
-    // Clear the suggestion
-    view.dispatch({
-      effects: InlineSuggestionEffect.of({
-        suggestion: null,
-        doc: view.state.doc,
-      }),
-    });
-    return true;
-  }
-}
-
-/**
- * Rendered by `renderInlineSuggestionPlugin`,
- * this creates multiple decoration widgets for the ranges
- * where changes occur in the document.
- */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion) {
-  console.log("====oldText====");
-  console.log(suggestion.oldText);
-  console.log("====end oldText====");
-  console.log("====newText====");
-  console.log(suggestion.newText);
-  console.log("====end newText====");
-
-  const cursorMarker = "<|user_cursor_is_here|>";
-
-  if (!suggestion.newText.includes(cursorMarker)) {
-    console.log("No cursor marker found, skipping ghost text");
-    return Decoration.none;
-  }
-
-  // Remove cursor marker from both texts to compute the actual diff
-  const oldTextClean = suggestion.oldText.replace(cursorMarker, "");
-  const newTextClean = suggestion.newText.replace(cursorMarker, "");
-  console.log("====oldTextClean====");
-  console.log(oldTextClean);
-  console.log("====end oldTextClean====");
-  console.log("====newTextClean====");
-  console.log(newTextClean);
-  console.log("====end newTextClean====");
-
-  // Use diff library to compute precise changes
-  const diffs = Diff.diffChars(oldTextClean, newTextClean);
-  console.log(`====diffs (${diffs.length})====`);
-  
-  // Find cursor positions in both old and new text
-  const oldCursorPosition = suggestion.oldText.indexOf(cursorMarker);
-  const newCursorPosition = suggestion.newText.indexOf(cursorMarker);
-  
-  console.log(`Old cursor position: ${oldCursorPosition}, New cursor position: ${newCursorPosition}`);
-  
-  // Track positions in both old and new text as we process diffs
-  let diffTextPos = 0;
-
-  // Extract diff parts for ghost text rendering - only changes at cursor position
-  const diffParts: DiffPart[] = [];
-  let ghostText = "";
-  
-  // Add a newline to the ghost text if the last character of the last part is a newline
-  var should_add_newline = false;
-  for (const part of diffs) {
-    console.log("oldCursorPosition", oldCursorPosition, "newCursorPosition", newCursorPosition);
-    console.log("diffTextPos", diffTextPos, "end", diffTextPos + part.value.length);
-    console.log("part", part);
-    
-    var value = part.value;
-
-    // console.log("value", value);
-    // console.log("value[value.length - 1]", value[value.length - 1]);
-
-    if (should_add_newline) {
-      value = '\n' + value;
-      should_add_newline = false;
-    }
-
-    if (diffTextPos >= oldCursorPosition && (diffTextPos + part.value.length) <= newCursorPosition) {
-      if (part.added) {
-        diffParts.push({ text: value, type: 'added' });
-      }
-      if (part.removed) {
-        diffParts.push({ text: value, type: 'removed' });
-      }
-      if (!part.added && !part.removed) {
-        diffParts.push({ text: value, type: 'unchanged' });
-      }
-      ghostText += value;
-    }
-    if (value[value.length - 1] === '\n') {
-      should_add_newline = true;
-    }
-    diffTextPos += part.count;
-  }
-  console.log("====end diffs====");
-
-  console.log(`Computed ghost text using diff: "${ghostText}"`);
-  console.log(`Diff parts:`, diffParts);
-
-  // Store the ghost text in the suggestion for use when accepting
-  suggestion.ghostText = ghostText;
-
-  // Only show ghost text if there's content to show
-  if (diffParts.length === 0) {
-    console.log("No ghost text needed - no diff parts to show");
-    return Decoration.none;
-  }
-
-  // Position ghost text at the current cursor position
-  const ghostStartPos = suggestion.to;
-
-  const decorations = [
-    Decoration.widget({
-      widget: new GhostTextWidget(diffParts, suggestion),
-      side: 1, // 1 means after the position
-    }).range(ghostStartPos),
-
-    Decoration.widget({
-      widget: new AcceptIndicatorWidget(suggestion),
-      side: 1, // 1 means after the position
-    }).range(ghostStartPos),
-  ];
-
-  return Decoration.set(decorations);
-}
 
 export const suggestionConfigFacet = Facet.define<
   {
@@ -402,6 +139,8 @@ export const suggestionConfigFacet = Facet.define<
     };
   },
 });
+
+
 
 /**
  * Listens to document updates and calls `fetchFn`
@@ -460,23 +199,157 @@ export const fetchSuggestion = ViewPlugin.fromClass(
 
 const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
   class Plugin {
-    decorations: DecorationSet;
+    overlay: HTMLElement | null = null;
+    
     constructor() {
-      // Empty decorations
-      this.decorations = Decoration.none;
+      this.overlay = null;
     }
+    
     update(update: ViewUpdate) {
       const suggestion = update.state.field(InlineSuggestionState)?.suggestion;
+      
       if (!suggestion) {
-        this.decorations = Decoration.none;
+        this.hideOverlay();
         return;
       }
 
-      this.decorations = inlineSuggestionDecoration(suggestion);
+      // Defer positioning to avoid "Reading the editor layout isn't allowed during an update" error
+      setTimeout(() => {
+        this.showOverlay(suggestion, update.view);
+      }, 0);
     }
-  },
-  {
-    decorations: (v) => v.decorations,
+    
+    hideOverlay() {
+      if (this.overlay) {
+        this.overlay.remove();
+        this.overlay = null;
+      }
+    }
+    
+    showOverlay(suggestion: DiffSuggestion, view: EditorView) {
+      this.hideOverlay();
+      
+      // Create the suggestion content
+      const diff = calculateDiff(suggestion.oldText, suggestion.newText);
+      
+      // Check if there are any actual changes in the diff
+      if (!diff.added && !diff.removed) {
+        // No changes detected, don't show the overlay
+        return;
+      }
+      
+      // Create overlay element
+      this.overlay = document.createElement("div");
+      this.overlay.className = "cm-floating-suggestion-overlay";
+      this.overlay.style.cssText = `
+        position: fixed;
+        z-index: 9999;
+        opacity: 0.95;
+        background: white;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 0.9em;
+        border: 1px solid #e1e4e8;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        max-width: 400px;
+        min-width: 200px;
+        overflow-x: auto;
+        pointer-events: auto;
+        transform: translateY(-50%);
+        white-space: nowrap;
+      `;
+      
+      // Add header
+      const header = document.createElement("div");
+      header.style.cssText =
+        "font-size: 0.8em; color: #007acc; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;";
+      header.textContent = "💡 Tab Tab Suggestion";
+      this.overlay.appendChild(header);
+      
+      // Add diff content
+      if (diff.removed) {
+        const removedSpan = document.createElement("div");
+        removedSpan.style.cssText =
+          "color: #d73a49; margin-bottom: 6px; font-family: monospace; white-space: pre; background: rgba(215, 58, 73, 0.1); padding: 4px 6px; border-radius: 4px; border-left: 3px solid #d73a49;";
+        removedSpan.textContent = diff.removed;
+        this.overlay.appendChild(removedSpan);
+      }
+      
+      if (diff.added) {
+        const addedSpan = document.createElement("div");
+        addedSpan.style.cssText =
+          "color: #28a745; font-family: monospace; white-space: pre; background: rgba(40, 167, 69, 0.1); padding: 4px 6px; border-radius: 4px; border-left: 3px solid #28a745;";
+        addedSpan.textContent = diff.added;
+        this.overlay.appendChild(addedSpan);
+      }
+      
+      // Add hint
+      const hint = document.createElement("div");
+      hint.style.cssText =
+        "font-size: 0.75em; color: #666; margin-top: 8px; font-style: italic; border-top: 1px solid #e1e4e8; padding-top: 6px;";
+      hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
+      this.overlay.appendChild(hint);
+      
+      // Add click handler
+      this.overlay.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const config = view.state.facet(suggestionConfigFacet);
+        if (config.acceptOnClick) {
+          view.dispatch({
+            ...insertDiffText(view.state, suggestion.newText),
+          });
+        }
+      };
+      
+      // Position the overlay near the cursor
+      this.positionOverlay(view);
+      
+      // Add to document body to ensure it floats above everything
+      document.body.appendChild(this.overlay);
+    }
+    
+    positionOverlay(view: EditorView) {
+      if (!this.overlay) return;
+      
+      const cursorPos = view.state.selection.main.head;
+      const coords = view.coordsAtPos(cursorPos);
+      
+      if (coords) {
+        // Use coordinates directly for fixed positioning
+        const relativeCoords = {
+          left: coords.left,
+          right: coords.right,
+          top: coords.top,
+          bottom: coords.bottom
+        };
+        
+        // Position to the right of the cursor
+        this.overlay.style.left = `${relativeCoords.right + 10}px`;
+        this.overlay.style.top = `${relativeCoords.top}px`;
+        
+        // Ensure the overlay doesn't go off-screen
+        setTimeout(() => {
+          if (!this.overlay) return;
+          const overlayRect = this.overlay.getBoundingClientRect();
+          
+          // Check if overlay would go off the right edge
+          if (overlayRect.right > window.innerWidth - 20) {
+            this.overlay.style.left = `${relativeCoords.left - overlayRect.width - 10}px`;
+          }
+          
+          // Check if overlay would go off the bottom edge
+          if (overlayRect.bottom > window.innerHeight - 20) {
+            this.overlay.style.top = `${relativeCoords.top - overlayRect.height - 10}px`;
+          }
+        }, 0);
+      }
+    }
+    
+    destroy() {
+      this.hideOverlay();
+    }
   },
 );
 
@@ -497,7 +370,7 @@ const inlineSuggestionKeymap = Prec.highest(
         }
 
         view.dispatch({
-          ...insertDiffText(view.state, suggestion.newText, suggestion),
+          ...insertDiffText(view.state, suggestion.newText),
         });
         return true;
       },
@@ -525,37 +398,27 @@ const inlineSuggestionKeymap = Prec.highest(
   ]),
 );
 
-function insertDiffText(
-  state: EditorState,
-  newText: string,
-  suggestion?: DiffSuggestion,
-): TransactionSpec {
+function insertDiffText(state: EditorState, text: string): TransactionSpec {
+  // Handle cursor positioning with marker
   const cursorMarker = "<|user_cursor_is_here|>";
-  const cursorMarkerWithNewline = "<|user_cursor_is_here|>\n";
-
-  if (!suggestion?.ghostText || !newText.includes(cursorMarker)) {
-    // Fallback to original behavior
-    const cleanText = newText.replace(cursorMarkerWithNewline, "").replace(cursorMarker, "").trim();
-    return {
-      changes: { from: 0, to: state.doc.length, insert: cleanText },
-      selection: EditorSelection.cursor(cleanText.length),
-      userEvent: "input.complete",
-    };
+  const cursorIndex = text.indexOf(cursorMarker);
+  
+  // Remove the cursor marker from the text
+  const cleanText = text.replace(cursorMarker, "").trim();
+  
+  // Calculate cursor position
+  let cursorPosition: number;
+  if (cursorIndex !== -1) {
+    // If marker was found, position cursor at that location (accounting for removed marker)
+    cursorPosition = cursorIndex;
+  } else {
+    // If no marker, position cursor at the end
+    cursorPosition = cleanText.length;
   }
-
-  // Insert the ghost text at the current cursor position
-  const insertText = suggestion.ghostText;
-  const insertPosition = suggestion.to;
-
-  // Calculate final cursor position relative to where we're inserting
-  const finalCursorPosition = insertPosition + insertText.length;
-
-  console.log(`Insert text: "${insertText}"`);
-  console.log(`Final cursor position: ${finalCursorPosition}`);
-
+  
   return {
-    changes: { from: insertPosition, to: insertPosition, insert: insertText },
-    selection: EditorSelection.cursor(finalCursorPosition),
+    changes: { from: 0, to: state.doc.length, insert: cleanText },
+    selection: EditorSelection.cursor(cursorPosition),
     userEvent: "input.complete",
   };
 }

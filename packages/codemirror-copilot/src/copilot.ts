@@ -2,113 +2,69 @@ import { inlineSuggestion, type DiffSuggestion } from "./inline-suggestion";
 import type { EditorState } from "@codemirror/state";
 
 /**
- * Callback for when a prediction is made
+ * Should fetch autosuggestions from your AI
+ * of choice. If there are no suggestions,
+ * you should return an empty string.
  */
-export type PredictionCallback = (prediction: string, prompt: string) => void;
-
-/**
- * Internal function to make HTTP request to the autocomplete API
- */
-async function fetchPrediction(
+export type SuggestionRequestCallback = (
   prefix: string,
   suffix: string,
-  model: string,
-  apiEndpoint: string,
-): Promise<{ prediction: string; prompt: string }> {
-  const response = await fetch(apiEndpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      prefix,
-      suffix,
-      model,
-    }),
-  });
+) => Promise<string>;
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-
-  return await response.json();
-}
+const localSuggestionsCache: { [key: string]: DiffSuggestion } = {};
 
 /**
- * Wraps the internal fetch method to work with the inline suggestion system
+ * Wraps a user-provided fetch method so that users
+ * don't have to interact directly with the EditorState
+ * object, and connects it to the local result cache.
  */
-function wrapInternalFetcher(
-  model: string,
-  apiEndpoint: string,
-  onPrediction?: PredictionCallback,
-) {
+function wrapUserFetcher(onSuggestionRequest: SuggestionRequestCallback) {
   return async function fetchSuggestion(state: EditorState) {
     const { from, to } = state.selection.ranges[0];
     const text = state.doc.toString();
     const prefix = text.slice(0, to);
     const suffix = text.slice(from);
 
-    // Insert a <|user_cursor_is_here|> marker at the cursor position
-    const oldText = text.slice(0, from) + "<|user_cursor_is_here|>" + text.slice(from);
-
-    try {
-      const { prediction, prompt } = await fetchPrediction(
-        prefix,
-        suffix,
-        model,
-        apiEndpoint,
-      );
-
-      // Call the prediction callback if provided
-      if (onPrediction) {
-        onPrediction(prediction, prompt);
-      }
-
-      // Remove special tokens and clean up the prediction
-      const cleanPrediction = prediction.replace(
-        /<\|editable_region_start\|>\n?|<\|editable_region_end\|>\n?/g,
-        "",
-      );
-
-      // Create a diff suggestion
-      const diffSuggestion: DiffSuggestion = {
-        oldText: oldText,
-        newText: cleanPrediction.trim(),
-        from: from,
-        to: to,
-        prefix: prefix,
-        suffix: suffix,
-      };
-
-      return diffSuggestion;
-    } catch (error) {
-      console.error("Error fetching prediction:", error);
-      // Return empty suggestion on error
-      return {
-        oldText: text,
-        newText: text,
-        from: from,
-        to: to,
-        prefix: prefix,
-        suffix: suffix,
-      };
+    // If we have a local suggestion cache, use it
+    const key = `${prefix}<:|:>${suffix}`;
+    const localSuggestion = localSuggestionsCache[key];
+    if (localSuggestion) {
+      return localSuggestion;
     }
+
+    const prediction = await onSuggestionRequest(prefix, suffix);
+
+    // Create a diff suggestion
+    const diffSuggestion: DiffSuggestion = {
+      oldText: text,
+      newText: prediction.trim(), // Ensure clean text without extra newlines
+      from: from,
+      to: to,
+    };
+    localSuggestionsCache[key] = diffSuggestion;
+    return diffSuggestion;
   };
 }
 
 /**
  * Configure the UI, state, and keymap to power
- * auto suggestions with a simplified API that only requires
- * the model name and API endpoint.
+ * auto suggestions, with an abstracted
+ * fetch method.
  */
 export const inlineCopilot = (
-  model: string,
-  apiEndpoint: string = "/api/autocomplete",
-  onPrediction?: PredictionCallback,
-  delay: number = 500,
+  onSuggestionRequest: SuggestionRequestCallback,
+  delay = 1000,
+  acceptOnClick = true,
 ) => {
   return inlineSuggestion({
-    fetchFn: wrapInternalFetcher(model, apiEndpoint, onPrediction),
+    fetchFn: wrapUserFetcher(onSuggestionRequest),
     delay,
+    acceptOnClick,
+  });
+};
+
+export const clearLocalCache = () => {
+  Object.keys(localSuggestionsCache).forEach((key) => {
+    delete localSuggestionsCache[key];
   });
 };
