@@ -2,7 +2,11 @@
 
 This code was forked from [codemirror-copilot](https://github.com/asadm/codemirror-copilot/tree/main) and modified to use our fine-tuned llm.
 
+![Example](example.png)
+
 Demo: https://x.com/gregschoeninger/status/1944590627829911821
+
+
 
 ## Usage
 
@@ -19,29 +23,25 @@ function CodeEditor() {
       extensions={[
           python(),
           inlineCopilot(
-          async (prefix, suffix, patch) => {
-            const res = await fetch("/api/autocomplete", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                prefix,
-                suffix,
-                language: "python",
-                model,
-                lastPrediction: lastPrediction,
-                lastPatch: patch,
-              }),
-            });
+            async (prefix, suffix) => {
+              const res = await fetch("/api/autocomplete", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  prefix,
+                  suffix,
+                  model: "oxen:dgonz-successful-amaranth-raven",
+                }),
+              });
 
-            const { prediction } = await res.json();
-            setLastPrediction(prediction);
-            return prediction;
-          },
-          500,
-          acceptOnClick,
-        ),
+              const { prediction } = await res.json();
+              setLastPrediction(prediction);
+              return prediction;
+            },
+            500,
+          ),
       ]}
     />
   );
