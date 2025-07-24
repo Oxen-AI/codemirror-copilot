@@ -2,7 +2,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { dracula } from "@uiw/codemirror-theme-dracula";
 
-import { inlineCopilot, clearLocalCache, getLastEditPatch } from "../dist";
+import { inlineCopilot, clearLocalCache, getLastEditPatch } from "../dist/src/index.js";
 import {
   Select,
   SelectContent,
@@ -18,8 +18,8 @@ import { useState } from "react";
 
 const DEFAULTCODE = `import pandas as pd
 
-# read csv file
-df = pd.read_csv("data.csv")`;
+file_name = "data.csv"
+df = pd.read`;
 
 
 function CodeEditor() {
@@ -55,7 +55,7 @@ function CodeEditor() {
                 body: JSON.stringify({
                   prefix,
                   suffix,
-                  model: "oxen:ox-wonderful-pink-swordtail",
+                  model: "oxen:dgonz-successful-amaranth-raven",
                 }),
               });
 

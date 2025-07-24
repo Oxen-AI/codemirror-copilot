@@ -1,15 +1,5 @@
-import { inlineSuggestion } from "./inline-suggestion";
+import { inlineSuggestion, type DiffSuggestion } from "./inline-suggestion";
 import type { EditorState } from "@codemirror/state";
-
-/**
- * Represents a diff suggestion with old and new text
- */
-export interface DiffSuggestion {
-  oldText: string;
-  newText: string;
-  from: number;
-  to: number;
-}
 
 /**
  * Should fetch autosuggestions from your AI

@@ -1,10 +1,7 @@
 import {
   ViewPlugin,
-  DecorationSet,
   EditorView,
   ViewUpdate,
-  Decoration,
-  WidgetType,
   keymap,
 } from "@codemirror/view";
 import {
@@ -29,7 +26,7 @@ type InlineFetchFn = (state: EditorState) => Promise<DiffSuggestion>;
 /**
  * Represents a diff suggestion with old and new text
  */
-interface DiffSuggestion {
+export interface DiffSuggestion {
   oldText: string;
   newText: string;
   from: number;
@@ -108,33 +105,7 @@ function calculateDiff(
   };
 }
 
-/**
- * Rendered by `renderInlineSuggestionPlugin`,
- * this creates possibly multiple lines of ghostly
- * text to show what would be inserted if you accept
- * the AI suggestion.
- */
-function inlineSuggestionDecoration(suggestion: DiffSuggestion, state: EditorState) {
-  const widgets = [];
 
-  // Create decoration for the diff display
-  const w = Decoration.widget({
-    widget: new InlineSuggestionWidget(suggestion),
-    side: -1, // Place before the line content
-  });
-
-  // Get the current cursor position
-  const cursorPos = state.selection.main.head;
-  
-  // Find the start of the line containing the cursor
-  const line = state.doc.lineAt(cursorPos);
-  const lineStart = line.from;
-  
-  // Position the widget at the start of the current line
-  widgets.push(w.range(lineStart));
-
-  return Decoration.set(widgets);
-}
 
 export const suggestionConfigFacet = Facet.define<
   {
@@ -169,97 +140,7 @@ export const suggestionConfigFacet = Facet.define<
   },
 });
 
-/**
- * Renders the suggestion inline
- * with the rest of the code in the editor.
- */
-class InlineSuggestionWidget extends WidgetType {
-  suggestion: DiffSuggestion;
 
-  /**
-   * Create a new suggestion widget.
-   */
-  constructor(suggestion: DiffSuggestion) {
-    super();
-    this.suggestion = suggestion;
-  }
-
-  toDOM(view: EditorView) {
-    const container = document.createElement("div");
-    container.className = "cm-inline-suggestion";
-    container.style.cssText = `
-      opacity: 0.8;
-      background: rgba(0, 0, 0, 0.08);
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin: 4px 0;
-      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-      font-size: 0.9em;
-      border-left: 4px solid #007acc;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-      max-width: 100%;
-      overflow-x: auto;
-    `;
-
-    const diff = calculateDiff(
-      this.suggestion.oldText,
-      this.suggestion.newText,
-    );
-
-    // Add a header to indicate this is a suggestion
-    const header = document.createElement("div");
-    header.style.cssText =
-      "font-size: 0.8em; color: #007acc; margin-bottom: 4px; font-weight: 500;";
-    header.textContent = "💡 AI Suggestion";
-    container.appendChild(header);
-
-    if (diff.removed) {
-      const removedSpan = document.createElement("div");
-      removedSpan.style.cssText =
-        "color: #d73a49; margin-bottom: 4px; font-family: monospace; white-space: pre;";
-      removedSpan.textContent = diff.removed;
-      container.appendChild(removedSpan);
-    }
-
-    if (diff.added) {
-      const addedSpan = document.createElement("div");
-      addedSpan.style.cssText =
-        "color: #28a745; font-family: monospace; white-space: pre;";
-      addedSpan.textContent = diff.added;
-      container.appendChild(addedSpan);
-    }
-
-    // Add a hint about how to accept
-    const hint = document.createElement("div");
-    hint.style.cssText =
-      "font-size: 0.75em; color: #666; margin-top: 4px; font-style: italic;";
-    hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
-    container.appendChild(hint);
-
-    container.onclick = (e) => this.accept(e, view);
-    return container;
-  }
-
-  accept(e: MouseEvent, view: EditorView) {
-    const config = view.state.facet(suggestionConfigFacet);
-    if (!config.acceptOnClick) return;
-
-    e.stopPropagation();
-    e.preventDefault();
-
-    const suggestion = view.state.field(InlineSuggestionState)?.suggestion;
-
-    // If there is no suggestion, do nothing and let the default keymap handle it
-    if (!suggestion) {
-      return false;
-    }
-
-    view.dispatch({
-      ...insertDiffText(view.state, suggestion.newText),
-    });
-    return true;
-  }
-}
 
 /**
  * Listens to document updates and calls `fetchFn`
@@ -318,23 +199,151 @@ export const fetchSuggestion = ViewPlugin.fromClass(
 
 const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
   class Plugin {
-    decorations: DecorationSet;
+    overlay: HTMLElement | null = null;
+    
     constructor() {
-      // Empty decorations
-      this.decorations = Decoration.none;
+      this.overlay = null;
     }
+    
     update(update: ViewUpdate) {
       const suggestion = update.state.field(InlineSuggestionState)?.suggestion;
+      
       if (!suggestion) {
-        this.decorations = Decoration.none;
+        this.hideOverlay();
         return;
       }
 
-      this.decorations = inlineSuggestionDecoration(suggestion, update.state);
+      // Defer positioning to avoid "Reading the editor layout isn't allowed during an update" error
+      setTimeout(() => {
+        this.showOverlay(suggestion, update.view);
+      }, 0);
     }
-  },
-  {
-    decorations: (v) => v.decorations,
+    
+    hideOverlay() {
+      if (this.overlay) {
+        this.overlay.remove();
+        this.overlay = null;
+      }
+    }
+    
+    showOverlay(suggestion: DiffSuggestion, view: EditorView) {
+      this.hideOverlay();
+      
+      // Create overlay element
+      this.overlay = document.createElement("div");
+      this.overlay.className = "cm-floating-suggestion-overlay";
+      this.overlay.style.cssText = `
+        position: fixed;
+        z-index: 9999;
+        opacity: 0.95;
+        background: white;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 0.9em;
+        border: 1px solid #e1e4e8;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        max-width: 400px;
+        min-width: 200px;
+        overflow-x: auto;
+        pointer-events: auto;
+        transform: translateY(-50%);
+        white-space: nowrap;
+      `;
+      
+      // Create the suggestion content
+      const diff = calculateDiff(suggestion.oldText, suggestion.newText);
+      
+      // Add header
+      const header = document.createElement("div");
+      header.style.cssText =
+        "font-size: 0.8em; color: #007acc; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;";
+      header.textContent = "💡 AI Recco";
+      this.overlay.appendChild(header);
+      
+      // Add diff content
+      if (diff.removed) {
+        const removedSpan = document.createElement("div");
+        removedSpan.style.cssText =
+          "color: #d73a49; margin-bottom: 6px; font-family: monospace; white-space: pre; background: rgba(215, 58, 73, 0.1); padding: 4px 6px; border-radius: 4px; border-left: 3px solid #d73a49;";
+        removedSpan.textContent = diff.removed;
+        this.overlay.appendChild(removedSpan);
+      }
+      
+      if (diff.added) {
+        const addedSpan = document.createElement("div");
+        addedSpan.style.cssText =
+          "color: #28a745; font-family: monospace; white-space: pre; background: rgba(40, 167, 69, 0.1); padding: 4px 6px; border-radius: 4px; border-left: 3px solid #28a745;";
+        addedSpan.textContent = diff.added;
+        this.overlay.appendChild(addedSpan);
+      }
+      
+      // Add hint
+      const hint = document.createElement("div");
+      hint.style.cssText =
+        "font-size: 0.75em; color: #666; margin-top: 8px; font-style: italic; border-top: 1px solid #e1e4e8; padding-top: 6px;";
+      hint.textContent = "Click to accept • Tab to accept • Esc to dismiss";
+      this.overlay.appendChild(hint);
+      
+      // Add click handler
+      this.overlay.onclick = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const config = view.state.facet(suggestionConfigFacet);
+        if (config.acceptOnClick) {
+          view.dispatch({
+            ...insertDiffText(view.state, suggestion.newText),
+          });
+        }
+      };
+      
+      // Position the overlay near the cursor
+      this.positionOverlay(view);
+      
+      // Add to document body to ensure it floats above everything
+      document.body.appendChild(this.overlay);
+    }
+    
+    positionOverlay(view: EditorView) {
+      if (!this.overlay) return;
+      
+      const cursorPos = view.state.selection.main.head;
+      const coords = view.coordsAtPos(cursorPos);
+      
+      if (coords) {
+        // Use coordinates directly for fixed positioning
+        const relativeCoords = {
+          left: coords.left,
+          right: coords.right,
+          top: coords.top,
+          bottom: coords.bottom
+        };
+        
+        // Position to the right of the cursor
+        this.overlay.style.left = `${relativeCoords.right + 10}px`;
+        this.overlay.style.top = `${relativeCoords.top}px`;
+        
+        // Ensure the overlay doesn't go off-screen
+        setTimeout(() => {
+          if (!this.overlay) return;
+          const overlayRect = this.overlay.getBoundingClientRect();
+          
+          // Check if overlay would go off the right edge
+          if (overlayRect.right > window.innerWidth - 20) {
+            this.overlay.style.left = `${relativeCoords.left - overlayRect.width - 10}px`;
+          }
+          
+          // Check if overlay would go off the bottom edge
+          if (overlayRect.bottom > window.innerHeight - 20) {
+            this.overlay.style.top = `${relativeCoords.top - overlayRect.height - 10}px`;
+          }
+        }, 0);
+      }
+    }
+    
+    destroy() {
+      this.hideOverlay();
+    }
   },
 );
 
