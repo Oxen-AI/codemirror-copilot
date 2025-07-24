@@ -229,6 +229,15 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
     showOverlay(suggestion: DiffSuggestion, view: EditorView) {
       this.hideOverlay();
       
+      // Create the suggestion content
+      const diff = calculateDiff(suggestion.oldText, suggestion.newText);
+      
+      // Check if there are any actual changes in the diff
+      if (!diff.added && !diff.removed) {
+        // No changes detected, don't show the overlay
+        return;
+      }
+      
       // Create overlay element
       this.overlay = document.createElement("div");
       this.overlay.className = "cm-floating-suggestion-overlay";
@@ -251,14 +260,11 @@ const renderInlineSuggestionPlugin = ViewPlugin.fromClass(
         white-space: nowrap;
       `;
       
-      // Create the suggestion content
-      const diff = calculateDiff(suggestion.oldText, suggestion.newText);
-      
       // Add header
       const header = document.createElement("div");
       header.style.cssText =
         "font-size: 0.8em; color: #007acc; margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;";
-      header.textContent = "💡 AI Recco";
+      header.textContent = "💡 Tab Tab Suggestion";
       this.overlay.appendChild(header);
       
       // Add diff content
